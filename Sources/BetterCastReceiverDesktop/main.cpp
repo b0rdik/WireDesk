@@ -43,6 +43,7 @@ int main(int argc, char* argv[]) {
     const auto stateDir=QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     QDir().mkpath(stateDir);
     QLockFile instanceLock(stateDir+"/instance.lock");
+    instanceLock.setStaleLockTime(0);
     QLocalServer server;
     const auto serverName=QStringLiteral("WireDesk-")+QString::fromLatin1(QCryptographicHash::hash(stateDir.toUtf8(),QCryptographicHash::Sha256).toHex().left(16));
     if (!instanceLock.tryLock(100)) {
@@ -63,7 +64,7 @@ int main(int argc, char* argv[]) {
         auto* socket=server.nextPendingConnection();
         if(!socket)return;
         auto* data=new QByteArray;
-        QObject::connect(socket,&QLocalSocket::readyRead,&window,[socket,data,&window] {
+        const auto readPairing=[socket,data,&window] {
             data->append(socket->readAll());
             if(data->size()>4097) { socket->disconnectFromServer(); return; }
             if(data->endsWith('\n')) {
@@ -72,7 +73,9 @@ int main(int argc, char* argv[]) {
                 window.showNormal(); window.raise(); window.activateWindow();
                 socket->disconnectFromServer();
             }
-        });
+        };
+        QObject::connect(socket,&QLocalSocket::readyRead,&window,readPairing);
+        if(socket->bytesAvailable())readPairing();
         QObject::connect(socket,&QLocalSocket::disconnected,socket,[socket,data]{ delete data; socket->deleteLater(); });
     });
 

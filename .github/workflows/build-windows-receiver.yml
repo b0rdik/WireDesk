@@ -55,7 +55,7 @@ jobs:
       - name: Install FFmpeg hardware encoders and x264
         shell: pwsh
         run: |
-          vcpkg install "ffmpeg[avcodec,avformat,avutil,swscale,swresample,x264,nvcodec,amf,qsv]:x64-windows" --no-default-features --recurse
+          vcpkg install "ffmpeg[core,avcodec,avformat,swscale,swresample,x264,nvcodec,amf,qsv]:x64-windows" --recurse
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - name: Save dependencies before application compilation
         if: steps.vcpkg-cache.outputs.cache-hit != 'true'
@@ -101,7 +101,14 @@ jobs:
           Get-ChildItem C:/vcpkg/installed/x64-windows/share -Directory | ForEach-Object {
             if (Test-Path "$($_.FullName)/copyright") { Copy-Item "$($_.FullName)/copyright" "artifact/licenses/dependencies/$($_.Name).txt" }
           }
-          Copy-Item C:/Qt/6.7.0/msvc2019_64/LICENSES artifact/licenses/Qt -Recurse
+          New-Item artifact/licenses/Qt -ItemType Directory | Out-Null
+          $qtLicenses=Invoke-RestMethod 'https://api.github.com/repos/qt/qtbase/contents/LICENSES?ref=v6.7.0'
+          foreach ($notice in $qtLicenses) { Invoke-WebRequest $notice.download_url -OutFile "artifact/licenses/Qt/$($notice.name)" }
+          vcpkg list | Out-File artifact/licenses/dependencies/versions.txt
+          $vcpkgCommit=git -C C:/vcpkg rev-parse HEAD
+          "vcpkg build scripts/source URLs: https://github.com/microsoft/vcpkg/tree/$vcpkgCommit/ports" | Out-File artifact/licenses/dependencies/build-source.txt
+          Copy-Item C:/vcpkg/installed/vcpkg/status artifact/licenses/dependencies/vcpkg-status.txt
+          Copy-Item licenses/SOURCE-ACCESS.md artifact/licenses/
           $version=(Get-Content VERSION -Raw).Trim()
           if ((Get-Item artifact/WireDesk.exe).VersionInfo.ProductVersion -ne $version) { throw 'EXE version mismatch' }
           Compress-Archive artifact/* "WireDesk-Windows-x64-portable.zip"
@@ -143,6 +150,7 @@ jobs:
           python3 scripts/check-version.py "$GITHUB_REF_NAME"
           test -n "$OTA_KEY" || { echo 'SPARKLE_EDDSA_PRIVATE_KEY is required'; exit 1; }
           curl -fL https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz -o "$RUNNER_TEMP/sparkle.tar.xz"
+          echo "c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c  $RUNNER_TEMP/sparkle.tar.xz" | shasum -a 256 -c -
           mkdir "$RUNNER_TEMP/sparkle"
           tar -xf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
           umask 077

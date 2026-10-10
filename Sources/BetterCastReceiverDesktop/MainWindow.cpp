@@ -198,7 +198,8 @@ static QListWidgetItem* addSidebarItem(QListWidget* list, const QString& icon,
                                         const QString& title, int pageIndex) {
     Q_UNUSED(icon);
     auto* item = new QListWidgetItem(title);
-    item->setIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon));
+    const auto symbol=title=="Второй экран" ? QStyle::SP_ArrowForward : title=="Приём экрана" ? QStyle::SP_ArrowBack : title=="Настройки" ? QStyle::SP_FileDialogDetailedView : title=="Диагностика" ? QStyle::SP_FileDialogInfoView : QStyle::SP_ComputerIcon;
+    item->setIcon(QApplication::style()->standardIcon(symbol));
     item->setData(Qt::UserRole+1,title);
     item->setData(Qt::UserRole, pageIndex);
     item->setSizeHint(QSize(0, 34));
@@ -1245,6 +1246,7 @@ void MainWindow::onMonitorSelected(int index) {
 void MainWindow::onStopSendingClicked() {
     m_autoConnectAttempted = true;
     m_sender->stopSending();
+    m_updater->setSessionActive(!m_network->clients().isEmpty());
     m_sendBtn->setEnabled(true); m_stopSendBtn->setEnabled(false); m_sendHostEdit->setEnabled(true);
     m_dedicatedEthernet->setEnabled(true); m_ethernetCombo->setEnabled(true);
     m_certificatePinEdit->setEnabled(true); m_monitorCombo->setEnabled(true);
