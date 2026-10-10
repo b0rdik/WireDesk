@@ -122,6 +122,29 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Pop-Location
           Move-Item Sources/BetterCastReceiverDesktop/WireDesk-Setup-*.exe ./
+      - name: Verify installation, application startup and uninstall
+        shell: pwsh
+        run: |
+          $version=(Get-Content VERSION -Raw).Trim()
+          $installer=(Resolve-Path "WireDesk-Setup-$version.exe").Path
+          $installed=Join-Path $env:LOCALAPPDATA 'Programs/WireDesk'
+          $setup=Start-Process -FilePath $installer -ArgumentList '/S' -Wait -PassThru
+          if ($setup.ExitCode -ne 0) { throw "Installer failed: $($setup.ExitCode)" }
+          foreach ($file in @('WireDesk.exe','WinSparkle.dll','uninstall.exe')) {
+            if (!(Test-Path (Join-Path $installed $file))) { throw "Missing installed runtime: $file" }
+          }
+          $registration='HKCU:/Software/Microsoft/Windows/CurrentVersion/Uninstall/WireDesk'
+          if ((Get-ItemProperty $registration).DisplayVersion -ne $version) { throw 'Installed version mismatch' }
+          if (!(Test-Path 'HKCU:/Software/Classes/wiredesk/shell/open/command')) { throw 'Pairing URL handler missing' }
+          $application=Start-Process -FilePath (Join-Path $installed 'WireDesk.exe') -WorkingDirectory $installed -PassThru
+          Start-Sleep -Seconds 5
+          if ($application.HasExited) { throw "Application exited on startup: $($application.ExitCode)" }
+          Stop-Process -Id $application.Id
+          $uninstall=Start-Process -FilePath (Join-Path $installed 'uninstall.exe') -ArgumentList '/S' -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstall failed: $($uninstall.ExitCode)" }
+          for ($attempt=0; $attempt -lt 20 -and (Test-Path $registration); $attempt++) { Start-Sleep -Milliseconds 250 }
+          if (Test-Path $registration) { throw 'Uninstall registration was not removed' }
+          if (Test-Path 'HKCU:/Software/Classes/wiredesk') { throw 'Pairing URL handler was not removed' }
       - uses: actions/upload-artifact@v4
         with:
           name: WireDesk-windows
