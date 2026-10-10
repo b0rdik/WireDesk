@@ -1,147 +1,51 @@
-# BetterCast
+# WireDesk
 
-BetterCast is an open-source screen extension app that turns almost any device into a wireless extra display for your Mac or Windows PC. Think Sidecar or AirPlay Receiver — but cross-platform and built for hardware Apple no longer supports, right down to using an old 5K iMac as a Thunderbolt display.
+<img src="assets/branding/wiredesk/icon-256.png" width="112" alt="WireDesk icon" />
 
-<p align="center">
-  <img src="assets/demo.gif" width="300" alt="An Android tablet running as a live extended display beside a MacBook" />
-</p>
-<p align="center">
-  <a href="https://youtube.com/shorts/m1FwRupqOZw">▶ Watch the full demo on YouTube</a>
-</p>
+**Your Mac. Your Windows second display. One Ethernet cable.**
 
-## Why BetterCast?
+WireDesk provides a native Mac receiver and Windows sender with an adaptive interface, protected pairing, saved setup and automatic reconnect. It is derived from [BetterCast by Stephen Lovino](https://github.com/StephenLovino/BetterCast), under GPL-3.0; original authorship and history are retained.
 
-Every screen-extension tool picks a lane: Sidecar is iPad-only and wants both devices on the same Apple ID, OpenDisplay is Apple-to-Apple, spacedesk is Windows-to-mobile, Duet moved to a subscription, Luna needs a hardware dongle. BetterCast is the one that doesn't pick a lane: it sends from your Mac (Windows sender in beta) and receives on everything — iPhone, iPad, Android, Windows, Linux, or another Mac — with audio, multi-device, and HEVC already shipped, free and GPLv3.
+[Download releases](https://github.com/b0rdik/WireDesk/releases/latest) · [Setup and technical details](docs/ethernet-second-display.md) · [Updates](docs/updates.md) · [Validation](docs/validation/ethernet-results.md)
 
-| | **BetterCast** | Apple Sidecar | [OpenDisplay](https://github.com/peetzweg/opendisplay) | Duet Display | Luna Display | spacedesk |
-|---|---|---|---|---|---|---|
-| Price | Free, open source | Free (built in) | Free, open source | Subscription | Hardware dongle | Free (closed source) |
-| Host (sender) | Mac, Windows (beta) | Mac | Mac | Mac & Windows | Mac & Windows | Windows |
-| iPhone / iPad receiver | ✅ | iPad only¹ | ✅ | ✅ | iPad only | ✅ |
-| Android receiver | ✅ | ❌ | Community forks² | ✅ | ❌ | ✅ |
-| Windows receiver | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ |
-| Linux receiver | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| Mac as receiver | ✅ | ❌ | Planned | ✅ | ✅ | ❌ |
-| Audio streaming | ✅ | ❌ | Planned | ✅ | ❌ | ✅ |
-| Multiple displays at once | ✅ | ❌ | ✅ | — | ❌ | ✅ |
-| Direct P2P, no router | ✅ (AWDL) | ✅ | ❌ | ❌ | — | ❌ |
-| Wired USB | Android (ADB) | ✅ | ✅ (iPhone/iPad) | ✅ | ✅ | ✅ |
-| No account needed | ✅ | Same Apple ID | ✅ | Account required | — | ✅ |
+## Connect
 
-¹ Sidecar requires both devices signed into the same Apple ID, and supports only recent iPad models.
-² Independent community projects extend OpenDisplay with Android and iOS 12 receivers, plus a Linux/Wayland *sender* — not shipped by the official app, but they exist and work.
-"—" means not documented by the vendor at the time of writing. Spotted an error? Please open an issue — this table is meant to be fair.
+1. Install WireDesk on both computers and join them with Ethernet. Mac creates its TLS identity automatically. An active Ethernet adapter appears without restarting; WireDesk selects it only when the choice is unambiguous.
+2. Copy the Mac pairing code, or transfer its `.wiredesk-pair` file. Import it in WireDesk on Windows. Approve the first Windows connection on Mac.
+3. Configure exactly one [Virtual Display Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) monitor with the driver’s official installer. Select **Extend**, select that monitor in WireDesk, and connect. WireDesk automatically applies the supported resolution/60 or 120 Hz, verifies the actual mode, and remembers the configuration.
 
-If your setup is all-Apple and wired USB to an iPhone matters most, [OpenDisplay](https://github.com/peetzweg/opendisplay) is a solid open-source choice. BetterCast is for everyone whose spare screens didn't all come from one company — see [ACKNOWLEDGMENTS.md](ACKNOWLEDGMENTS.md) for open-source projects whose ideas informed this one.
+Auto-connect is enabled by default for a saved pair and one available virtual monitor. After a transport interruption, the sender reconnects to the same wired interface and certificate. Stop explicitly to keep the session stopped. No silent fallback to Wi-Fi. Mac opens the received display; fullscreen can be exited with Escape.
 
-## How It Works
+On a direct cable, OS automatic IPv4 link-local addresses (`169.254.x.x`) normally work. Where automatic addressing is unavailable, configure a dedicated subnet without a gateway; the app links to network settings. Driver installation and privileged OS network changes remain explicit. Do not disable Secure Boot or the firewall.
 
-**BetterCast** is a single unified Mac app that does both jobs: it can **send** your screen to other devices (creating a virtual display per receiver) and **receive** screens from other Macs in a separate window. Receivers on iOS, Windows, Linux, and Android are dedicated apps.
+## What is verified
 
-Each connected receiver gets its own virtual display with independent resolution, input handling, and optional audio streaming.
+The Mac release builds locally, TLS framing/rejection/reconnect and hardware H.264 decoding are tested, and pairing rejects malformed/ambiguous codes. GitHub Actions builds Mac universal and Windows x64 packages, runs relevant tests, and publishes signed feeds on version tags.
 
-## Supported Platforms
+Physical Windows capture, a real VDD monitor, direct Ethernet throughput and 120 FPS scanout/end-to-end latency require a two-computer test. Display refresh support and received/decoded/newly submitted FPS are separate metrics. 120 FPS requires a supported hardware encoder; software fallback is restricted to 60 FPS.
 
-| Platform | Role | Connection | Download |
-|----------|------|------------|----------|
-| **macOS** | Sender + Receiver | P2P Direct / WiFi | [bettercast.online](https://bettercast.online/#install) |
-| **iOS / iPadOS** | Receiver | P2P Direct (AWDL) / WiFi | [bettercast.online](https://bettercast.online/#install) |
-| **Windows** | Sender (beta) + Receiver | WiFi | [bettercast.online](https://bettercast.online/#install) |
-| **Linux** | Receiver | WiFi | [bettercast.online](https://bettercast.online/#install) |
-| **Android** | Receiver | WiFi / ADB USB | [bettercast.online](https://bettercast.online/#install) |
+## Build
 
-> The macOS DMG is notarized and signed with an Apple Developer certificate.
+Mac (Xcode/Swift, macOS 13+):
 
-## Features
-
-- **Multi-device** — Connect multiple receivers simultaneously, each with its own virtual display
-- **Cross-platform input** — Mouse and keyboard pass-through from any receiver back to the Mac
-- **Audio streaming** — Optional per-device AAC-LC audio forwarding (128 kbps stereo)
-- **Adaptive quality** — Per-link tuning: AWDL P2P runs 60 FPS at full bitrate; WiFi infrastructure runs 30 FPS at the user-selected bitrate (default 20 Mbps) with shorter keyframe intervals for faster recovery on lossy links; ADB tunnels match P2P quality
-- **Zero-config for Apple devices** — iOS/Mac receivers are discovered automatically via AWDL (no WiFi network needed)
-- **mDNS discovery** — Windows/Linux/Android receivers are discovered automatically when on the same network
-
-## Installation
-
-### macOS (Sender + Receiver)
-
-1. Download the latest DMG from [bettercast.online](https://bettercast.online/#install)
-2. Open the DMG and drag **BetterCast** to your Applications folder
-3. Launch **BetterCast** and grant the required permissions:
-   - **Screen Recording** — to capture your display
-   - **Accessibility** — to relay mouse and keyboard input from receivers
-
-The receiver auto-starts in the background — no need to "switch modes". To send your screen, pick a discovered device from the sidebar. To receive, just leave the app open and another Mac/iOS device will see you in their list.
-
-### iOS / iPadOS
-
-The iOS receiver is [on the App Store](https://apps.apple.com/app/id6761002383). It is not yet available in the EU while App Store trader-status verification is pending.
-
-### Windows
-
-Download the installer from [bettercast.online](https://bettercast.online/#install) and run `BetterCastReceiver.exe`. Both devices must be on the same WiFi network.
-
-### Linux
-
-Download the AppImage from [bettercast.online](https://bettercast.online/#install). Make it executable (`chmod +x`) and run. Both devices must be on the same WiFi network.
-
-### Android
-
-Visit [bettercast.online](https://bettercast.online/#install) for the latest APK. Supports WiFi and USB via ADB tunnel.
-
-## Dedicated Windows → Mac Ethernet
-
-The source now includes an opt-in dedicated TLS/Ethernet mode with interface/IP selection, 60/120 FPS targets, bounded queues and reconnection. Windows virtual display/driver loading and physical two-device 120 FPS remain unverified. See [build, pairing and setup instructions](docs/ethernet-second-display.md) and [performed checks](docs/validation/ethernet-results.md). Use the unified Mac app, not the standalone legacy Swift receiver.
-
-## Networking
-
-BetterCast uses **TCP (port 51820)** for the primary video/audio stream and **UDP (port 51821)** for chunked frame delivery. Service discovery uses mDNS (`_bettercast._tcp`).
-
-- **Apple-to-Apple**: Uses AWDL (Apple Wireless Direct Link) for a direct P2P connection — no WiFi router needed
-- **All other platforms**: Requires both devices to be on the same WiFi/LAN network
-- **Hotspot**: If no shared network is available, create a hotspot on any device and connect the Mac to it
-
-### Wire Protocol
-
-Frames are sent as length-prefixed TCP messages with a 1-byte type tag:
-
-```
-[4-byte big-endian length] [1-byte type] [payload]
-  type 0x01 = H.264 video (AVCC NALUs, no Annex B start codes)
-  type 0x02 = AAC-LC audio (raw frames, no ADTS header)
+```sh
+scripts/build-wiredesk-mac.sh dist/WireDesk.app
+# Optional: WIREDESK_UNIVERSAL=1 scripts/build-wiredesk-mac.sh dist/WireDesk.app
 ```
 
-Legacy receivers (pre-1.3 iOS / Mac Swift) use a different framing without the type byte; the desktop receiver auto-detects the format on the first frame of each connection.
+Windows (MSVC, Qt 6 Core/Gui/Widgets/Network/OpenGLWidgets/Multimedia, FFmpeg with x264/NVENC/AMF/QSV):
 
-## Release Notes
+```sh
+cmake -S Sources/BetterCastReceiverDesktop -B build -G Ninja -DENABLE_SENDER=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+```
 
-See [docs/release-notes/](docs/release-notes/) for per-version notes (v5–v8).
+Use the complete Windows package with WinSparkle.dll for OTA updates. The installer registers pairing file/URL handlers and does not require administrator privileges. GPL source is provided in this repository and release source archives. Qt/FFmpeg/WinSparkle notices are bundled; see [acknowledgments](ACKNOWLEDGMENTS.md).
 
-## Localization
+## Automatic updates
 
-The macOS app follows your system language. English, Simplified Chinese, Japanese, Korean, German, and French ship today, and community translations are welcome — adding a language is a single-file pull request. See [localization/README.md](localization/README.md).
+Sparkle 2.10.0 on Mac and WinSparkle 0.9.4 on Windows check HTTPS release feeds daily and verify Ed25519 archive signatures. Mac can download updates automatically; Windows prompts before installation. Updates cannot shut down an active streaming session. The first release is experimental (Mac ad-hoc/Windows unsigned); trusted OS distribution requires Developer ID/notarization and Authenticode credentials.
 
-## Support the Project
+To release: update root `VERSION`, desktop `VERSION` and both Mac plist versions; commit and push `vX.Y.Z`. CI refuses mismatched versions or a missing signing secret. See [maintainer instructions](docs/updates.md).
 
-BetterCast is free and open source. If you find it useful and want to support development, you can donate here:
-
-**[Donate on Whop](https://whop.com/bettercast/bettercast-donate/)**
-
-## Disclaimer
-
-**USE AT YOUR OWN RISK.**
-
-This software is provided "as is", without warranty of any kind, express or implied. We are not responsible for any damages to your devices, data loss, or other issues that may occur while using this application.
-
-BetterCast is fully open source. We encourage users to audit the code for safety and security. If you find any issues, please report them or contribute a fix.
-
-## License & Contribution
-
-BetterCast is licensed under the **GNU General Public License v3.0 (GPLv3)**.
-
-### Why GPLv3?
-We believe in the freedom of software and the collective benefit of open collaboration. We choose GPLv3 to specifically:
-- **Prevent restrictive forks**: Anyone who modifies and distributes this code must also share their changes under the same license. You cannot take this open source project, modify it, and sell it as a closed-source product.
-- **Encourage contribution**: We welcome contributions! By keeping the source open, we ensure that improvements benefit everyone.
-
-We strongly encourage safety and transparency. If you are contributing, please ensure your code adheres to safety standards and respects user privacy.
+Legacy BetterCast features remain accessible under **All features** and the desktop sidebar. Android/iOS targets retain their upstream identity and are not WireDesk OTA targets.

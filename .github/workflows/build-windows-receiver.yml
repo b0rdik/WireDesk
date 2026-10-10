@@ -1,344 +1,150 @@
-name: Build Windows Receiver
-
+name: WireDesk build and release
 on:
   push:
-    paths:
-      - 'Sources/BetterCastReceiverDesktop/**'
-      - '.github/workflows/build-windows-receiver.yml'
+    branches: [main]
+    tags: ['v*']
+  pull_request:
   workflow_dispatch:
-
+permissions:
+  contents: read
 concurrency:
-  group: windows-receiver-${{ github.ref }}
-  cancel-in-progress: true
-
-env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  QT_VERSION: '6.7.0'
-  VDD_VERSION: '25.7.23'  # Pinned VDD release tag
-  VDD_REPO: 'VirtualDrivers/Virtual-Display-Driver'
-
+  group: wiredesk-${{ github.ref }}
+  cancel-in-progress: false
 jobs:
-  build-windows:
-    # Was pinned to windows-2022 for reproducibility. That pin is what silently broke
-    # this workflow: the image's Visual Studio moved on, "Visual Studio 17 2022" stopped
-    # existing on the runner, and configure failed on every release from v14 to v16
-    # without anyone noticing — the Mac release path does not depend on this job.
-    # The build no longer cares which Visual Studio is installed (see the Ninja generator
-    # below), so tracking latest is now the safer choice than pinning to an image that
-    # will eventually be retired again.
-    runs-on: windows-latest
-
-    env:
-      # Surface to step `if:` conditions. Secrets cannot be referenced directly
-      # in step `if:`, so we promote presence to a boolean env at job level.
-      HAS_SIGNING_CERT: ${{ secrets.WINDOWS_CERT_PFX_BASE64 != '' }}
-
+  mac:
+    runs-on: macos-15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Read version (single source of truth)
-        id: version
-        shell: pwsh
+      - uses: actions/checkout@v4
+      - name: Verify versions
+        run: python3 scripts/check-version.py
+      - name: Build universal Mac application
+        env:
+          WIREDESK_UNIVERSAL: '1'
         run: |
-          $versionFile = "Sources/BetterCastReceiverDesktop/VERSION"
-          if (-not (Test-Path $versionFile)) {
-            Write-Error "VERSION file not found at $versionFile"
-            exit 1
-          }
-          $version = (Get-Content $versionFile -Raw).Trim()
-          if ($version -notmatch '^\d+\.\d+\.\d+$') {
-            Write-Error "VERSION file must contain semver (X.Y.Z), got: '$version'"
-            exit 1
-          }
-          $numeric = "$version.0"
-          Write-Host "Building BetterCast $version (numeric: $numeric)"
-          "version=$version"  >> $env:GITHUB_OUTPUT
-          "numeric=$numeric"  >> $env:GITHUB_OUTPUT
-
-      - name: Setup MSVC
-        uses: ilammy/msvc-dev-cmd@v1
+          scripts/build-wiredesk-mac.sh dist/WireDesk.app
+          ditto -c -k --sequesterRsrc --keepParent dist/WireDesk.app dist/WireDesk-mac-universal.zip
+      - name: Test protocol and hardware decoder
+        run: |
+          brew install ffmpeg
+          BETTERCAST_TEST_WORK="$RUNNER_TEMP/ethernet-tests" scripts/test-ethernet.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WireDesk-mac
+          path: dist/WireDesk-mac-universal.zip
+          if-no-files-found: error
+  windows:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify versions
+        run: python scripts/check-version.py
+      - uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-
-      - name: Install Qt 6 via aqtinstall
+      - name: Install Qt
         shell: pwsh
         run: |
           pip install aqtinstall
-          python -m aqt install-qt windows desktop ${{ env.QT_VERSION }} win64_msvc2019_64 `
-            --modules qtmultimedia `
-            --outputdir C:/Qt
-          "Qt6_DIR=C:/Qt/${{ env.QT_VERSION }}/msvc2019_64" >> $env:GITHUB_ENV
-          "C:/Qt/${{ env.QT_VERSION }}/msvc2019_64/bin"     >> $env:GITHUB_PATH
-
-      - name: Cache vcpkg packages
-        uses: actions/cache@v4
+          python -m aqt install-qt windows desktop 6.7.0 win64_msvc2019_64 --modules qtmultimedia --outputdir C:/Qt
+          "C:/Qt/6.7.0/msvc2019_64/bin" >> $env:GITHUB_PATH
+      - uses: actions/cache@v4
         with:
-          path: |
-            C:/vcpkg/installed
-            C:/vcpkg/buildtrees
-            C:/vcpkg/packages
-          key: vcpkg-ffmpeg-x64-windows-${{ hashFiles('.github/workflows/build-windows-receiver.yml') }}
-          restore-keys: |
-            vcpkg-ffmpeg-x64-windows-
-
-      - name: Install FFmpeg via vcpkg (hardware encoders and x264 fallback)
+          path: C:/vcpkg/installed
+          key: wiredesk-vcpkg-ffmpeg-v1-${{ runner.os }}
+      - name: Install FFmpeg hardware encoders and x264
         shell: pwsh
-        env:
-          VCPKG_ROOT: C:/vcpkg
         run: |
           vcpkg install "ffmpeg[x264,nvcodec,amf,qsv]:x64-windows" --recurse
-
-      - name: Generate Windows icon (.ico)
-        shell: pwsh
-        run: |
-          pip install Pillow
-          python -c "
-          from PIL import Image
-          img = Image.open('Sources/BetterCastReceiverDesktop/icon_256x256.png')
-          img.save('Sources/BetterCastReceiverDesktop/appicon.ico',
-                   sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])
-          "
-
-      - name: Configure CMake
-        shell: pwsh
-        run: |
-          cd Sources/BetterCastReceiverDesktop
-          mkdir build | Out-Null
-          cd build
-          # Ninja, not the Visual Studio generator. "Setup MSVC" above already put the
-          # x64 toolchain on PATH, so the compiler is found through the environment
-          # instead of by looking up a specific Visual Studio version — which is exactly
-          # what stopped working when the runner image changed.
-          # Ninja is single-config, so the build type is set here rather than at build
-          # time, and the output lands in build/ rather than build/Release/.
-          cmake .. -G Ninja `
-            -DCMAKE_BUILD_TYPE=Release `
-            -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
-            -DCMAKE_PREFIX_PATH="$env:Qt6_DIR" `
-            -DENABLE_SENDER=ON
-
-      - name: Build
-        shell: pwsh
-        run: |
-          cd Sources/BetterCastReceiverDesktop/build
-          cmake --build .
-
-      - name: Verify EXE version metadata
-        shell: pwsh
-        run: |
-          $exe = "Sources/BetterCastReceiverDesktop/build/BetterCastReceiver.exe"
-          $info = (Get-Item $exe).VersionInfo
-          $expected = "${{ steps.version.outputs.version }}"
-          Write-Host "EXE FileVersion:    $($info.FileVersion)"
-          Write-Host "EXE ProductVersion: $($info.ProductVersion)"
-          if ($info.ProductVersion -notlike "$expected*") {
-            Write-Error "EXE version metadata mismatch: expected $expected, got $($info.ProductVersion)"
-            exit 1
-          }
-
-      - name: Download ADB platform-tools
-        shell: pwsh
-        run: |
-          Invoke-WebRequest -Uri "https://dl.google.com/android/repository/platform-tools-latest-windows.zip" `
-            -OutFile "platform-tools.zip"
-          Expand-Archive -Path "platform-tools.zip" -DestinationPath "."
-          if (-not (Test-Path "platform-tools/adb.exe")) {
-            Write-Error "ADB download failed — adb.exe missing from extracted archive"
-            exit 1
-          }
-
-      - name: Download Virtual Display Driver (VDD)
-        shell: pwsh
-        run: |
-          $tag  = "${{ env.VDD_VERSION }}"
-          $repo = "${{ env.VDD_REPO }}"
-          $api  = "https://api.github.com/repos/$repo/releases/tags/$tag"
-
-          mkdir "vdd" -Force | Out-Null
-
-          # Discover the actual asset names from the GitHub release — survives
-          # asset renames between VDD versions and removes guessing.
-          $headers = @{ 'User-Agent' = 'BetterCast-CI' }
-          if ($env:GITHUB_TOKEN) { $headers['Authorization'] = "Bearer $env:GITHUB_TOKEN" }
-
-          $release = Invoke-RestMethod -Uri $api -Headers $headers
-          Write-Host "VDD release: $($release.name) ($($release.tag_name))"
-          Write-Host "Available assets:"
-          $release.assets | ForEach-Object { Write-Host "  - $($_.name)" }
-
-          # Pick the Intel/AMD64 VDD driver package.
-          # Heads-up on the naming: VDD ships its Intel package as
-          # "VirtualDisplayDriver-x86.Driver.Only.zip". The "-x86" suffix is a
-          # misnomer — it's the Intel-architecture package and the driver
-          # inside runs on x64 Windows (it's the only non-ARM package they
-          # publish). The ARM64 variant is separate. So for a 64-bit Windows
-          # build we explicitly want the x86-named zip; we're NOT downloading
-          # a 32-bit driver.
-          $driverAsset = $release.assets | Where-Object {
-            $_.name -match '(?i)^VirtualDisplayDriver-x86\.Driver\.Only\.zip$'
-          } | Select-Object -First 1
-
-          # Fallback to a looser match in case upstream renames the asset
-          if (-not $driverAsset) {
-            $driverAsset = $release.assets | Where-Object {
-              $_.name -match '(?i)VirtualDisplayDriver.*Driver\.Only.*\.zip$' -and
-              $_.name -notmatch '(?i)ARM64'
-            } | Select-Object -First 1
-          }
-
-          if (-not $driverAsset) {
-            Write-Error "No matching VDD driver asset in release $tag — see assets list above"
-            exit 1
-          }
-          Write-Host "Selected driver asset: $($driverAsset.name)"
-
-          Invoke-WebRequest -Uri $driverAsset.browser_download_url -OutFile "vdd-driver.zip" -MaximumRedirection 5 -Headers $headers
-          Expand-Archive -Path "vdd-driver.zip" -DestinationPath "vdd-driver-extract"
-          Get-ChildItem "vdd-driver-extract" -Recurse -File | ForEach-Object {
-            Copy-Item $_.FullName "vdd/" -Force
-          }
-
-          # Optional: VDD Control GUI (used by users post-install for diagnostics)
-          $controlAsset = $release.assets | Where-Object { $_.name -match '(?i)vdd.*control.*\.zip$' } | Select-Object -First 1
-          if ($controlAsset) {
-            Write-Host "Selected control asset: $($controlAsset.name)"
-            Invoke-WebRequest -Uri $controlAsset.browser_download_url -OutFile "vdd-control.zip" -MaximumRedirection 5 -Headers $headers
-            Expand-Archive -Path "vdd-control.zip" -DestinationPath "vdd-control-extract"
-            Get-ChildItem "vdd-control-extract" -Recurse -File | ForEach-Object {
-              Copy-Item $_.FullName "vdd/" -Force
-            }
-          }
-
-          # Hard contract: MttVDD.inf MUST be present, otherwise the installer
-          # can't function and we refuse to ship a broken artifact.
-          if (-not (Test-Path "vdd/MttVDD.inf")) {
-            Write-Host "Files in vdd/:"
-            Get-ChildItem "vdd" | ForEach-Object { Write-Host "  $($_.Name)" }
-            Write-Error "VDD packaging failed — MttVDD.inf not found in extracted assets"
-            exit 1
-          }
-          Write-Host "VDD packaged successfully ($((Get-ChildItem 'vdd' -File).Count) files, MttVDD.inf present)"
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-
-      - name: Package artifact
-        shell: pwsh
-        run: |
-          mkdir artifact | Out-Null
-
-          Copy-Item "Sources/BetterCastReceiverDesktop/build/BetterCastReceiver.exe" "artifact/"
-
-          windeployqt --release --no-translations --no-system-d3d-compiler `
-            --no-opengl-sw "artifact/BetterCastReceiver.exe"
-
-          $vcpkgBin = "C:/vcpkg/installed/x64-windows/bin"
-          if (Test-Path $vcpkgBin) {
-            Get-ChildItem "$vcpkgBin/*.dll" | ForEach-Object {
-              Copy-Item $_.FullName "artifact/"
-            }
-          }
-
-          if (Test-Path "platform-tools/adb.exe") {
-            Copy-Item "platform-tools/adb.exe"          "artifact/"
-            Copy-Item "platform-tools/AdbWinApi.dll"    "artifact/" -ErrorAction SilentlyContinue
-            Copy-Item "platform-tools/AdbWinUsbApi.dll" "artifact/" -ErrorAction SilentlyContinue
-          }
-
-          Copy-Item "Sources/BetterCastReceiverDesktop/appicon.ico" "artifact/" -ErrorAction SilentlyContinue
-
-          # Bundle VDD into portable artifact too (for users who skip the installer)
-          mkdir "artifact/VirtualDisplayDriver" -Force | Out-Null
-          Copy-Item "vdd/*" "artifact/VirtualDisplayDriver/" -Force
-
-      - name: Sign EXE (optional)
-        if: env.HAS_SIGNING_CERT == 'true'
-        shell: pwsh
-        env:
-          PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
-          PFX_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
-        run: |
-          [System.IO.File]::WriteAllBytes("$env:RUNNER_TEMP\cert.pfx",
-            [Convert]::FromBase64String($env:PFX_BASE64))
-          $signtool = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
-          if (-not $signtool) {
-            $signtool = (Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe |
-              Where-Object { $_.Directory.FullName -like '*\x64' } | Select-Object -First 1).FullName
-          }
-          & $signtool sign `
-            /f "$env:RUNNER_TEMP\cert.pfx" /p $env:PFX_PASSWORD `
-            /tr http://timestamp.digicert.com /td sha256 /fd sha256 `
-            "artifact/BetterCastReceiver.exe"
-          Remove-Item "$env:RUNNER_TEMP\cert.pfx" -Force
-
-      - name: Verify NSIS (preinstalled on windows-2022)
-        shell: pwsh
-        run: |
-          # windows-2022 runners ship with NSIS at C:\Program Files (x86)\NSIS\
-          # already on PATH. We assert presence rather than reinstalling so we
-          # don't depend on third-party mirrors or winget at build time.
-          $makensis = (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
-          if (-not $makensis) {
-            $candidate = "C:\Program Files (x86)\NSIS\makensis.exe"
-            if (Test-Path $candidate) {
-              "C:\Program Files (x86)\NSIS" >> $env:GITHUB_PATH
-              $makensis = $candidate
-            }
-          }
-          if (-not $makensis) {
-            Write-Error "makensis.exe not found — windows-2022 runner image changed?"
-            exit 1
-          }
-          Write-Host "Using NSIS: $makensis"
-          & $makensis /VERSION
-
-      - name: Build installer
-        shell: pwsh
-        run: |
-          $version = "${{ steps.version.outputs.version }}"
-          $numeric = "${{ steps.version.outputs.numeric }}"
-
-          cd Sources/BetterCastReceiverDesktop
-          Copy-Item -Recurse "${{ github.workspace }}/artifact" "artifact"
-          Copy-Item -Recurse "${{ github.workspace }}/vdd"      "vdd"
-
-          makensis "/DPRODUCT_VERSION=$version" "/DPRODUCT_NUMERIC_VERSION=$numeric" installer.nsi
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          Move-Item "BetterCast-Setup-*.exe" "${{ github.workspace }}/"
-
-      - name: Sign installer (optional)
-        if: env.HAS_SIGNING_CERT == 'true'
+      - name: Build native Windows application and tests
         shell: pwsh
-        env:
-          PFX_BASE64: ${{ secrets.WINDOWS_CERT_PFX_BASE64 }}
-          PFX_PASSWORD: ${{ secrets.WINDOWS_CERT_PASSWORD }}
         run: |
-          [System.IO.File]::WriteAllBytes("$env:RUNNER_TEMP\cert.pfx",
-            [Convert]::FromBase64String($env:PFX_BASE64))
-          $signtool = (Get-Command signtool.exe -ErrorAction SilentlyContinue).Source
-          if (-not $signtool) {
-            $signtool = (Get-ChildItem 'C:\Program Files (x86)\Windows Kits\10\bin' -Recurse -Filter signtool.exe |
-              Where-Object { $_.Directory.FullName -like '*\x64' } | Select-Object -First 1).FullName
+          cmake -S Sources/BetterCastReceiverDesktop -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_PREFIX_PATH=C:/Qt/6.7.0/msvc2019_64 -DENABLE_SENDER=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake -S Tests/Ethernet -B test-build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_PREFIX_PATH=C:/Qt/6.7.0/msvc2019_64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build test-build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          "C:/vcpkg/installed/x64-windows/bin" >> $env:GITHUB_PATH
+      - name: Run pairing and encoder tests
+        shell: pwsh
+        run: |
+          ctest --test-dir test-build --output-on-failure
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Fetch pinned WinSparkle
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://github.com/vslavik/winsparkle/releases/download/v0.9.4/WinSparkle-0.9.4.zip -OutFile winsparkle.zip
+          if ((Get-FileHash winsparkle.zip -Algorithm SHA256).Hash.ToLower() -ne '6037df37fc263bd1650a1c4949681a9d40ffe991d01f35892a406cb5d103c976') { throw 'WinSparkle checksum mismatch' }
+          Expand-Archive winsparkle.zip winsparkle
+      - name: Package runtime and notices
+        shell: pwsh
+        run: |
+          New-Item artifact -ItemType Directory | Out-Null
+          Copy-Item build/WireDesk.exe artifact/
+          windeployqt --release --no-translations artifact/WireDesk.exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Copy-Item C:/vcpkg/installed/x64-windows/bin/*.dll artifact/
+          Copy-Item winsparkle/WinSparkle-0.9.4/x64/Release/WinSparkle.dll artifact/
+          Copy-Item LICENSE,ACKNOWLEDGMENTS.md artifact/
+          Copy-Item licenses artifact/ -Recurse
+          New-Item artifact/licenses/dependencies -ItemType Directory | Out-Null
+          Get-ChildItem C:/vcpkg/installed/x64-windows/share -Directory | ForEach-Object {
+            if (Test-Path "$($_.FullName)/copyright") { Copy-Item "$($_.FullName)/copyright" "artifact/licenses/dependencies/$($_.Name).txt" }
           }
-          Get-ChildItem "BetterCast-Setup-*.exe" | ForEach-Object {
-            & $signtool sign `
-              /f "$env:RUNNER_TEMP\cert.pfx" /p $env:PFX_PASSWORD `
-              /tr http://timestamp.digicert.com /td sha256 /fd sha256 `
-              $_.FullName
-          }
-          Remove-Item "$env:RUNNER_TEMP\cert.pfx" -Force
-
-      - name: Upload portable artifact
-        uses: actions/upload-artifact@v4
+          Copy-Item C:/Qt/6.7.0/msvc2019_64/LICENSES artifact/licenses/Qt -Recurse
+          $version=(Get-Content VERSION -Raw).Trim()
+          if ((Get-Item artifact/WireDesk.exe).VersionInfo.ProductVersion -ne $version) { throw 'EXE version mismatch' }
+          Compress-Archive artifact/* "WireDesk-Windows-x64-portable.zip"
+      - name: Build per-user installer
+        shell: pwsh
+        run: |
+          $version=(Get-Content VERSION -Raw).Trim()
+          Copy-Item artifact Sources/BetterCastReceiverDesktop/artifact -Recurse
+          Push-Location Sources/BetterCastReceiverDesktop
+          & 'C:/Program Files (x86)/NSIS/makensis.exe' "/DPRODUCT_VERSION=$version" "/DPRODUCT_NUMERIC_VERSION=$version.0" installer.nsi
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Pop-Location
+          Move-Item Sources/BetterCastReceiverDesktop/WireDesk-Setup-*.exe ./
+      - uses: actions/upload-artifact@v4
         with:
-          name: BetterCastReceiver-Windows-x64-${{ steps.version.outputs.version }}
-          path: artifact/
-          retention-days: 30
-
-      - name: Upload installer
-        uses: actions/upload-artifact@v4
+          name: WireDesk-windows
+          path: |
+            WireDesk-Setup-*.exe
+            WireDesk-Windows-x64-portable.zip
+          if-no-files-found: error
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [mac, windows]
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
         with:
-          name: BetterCast-Setup-Windows-x64-${{ steps.version.outputs.version }}
-          path: BetterCast-Setup-*.exe
-          retention-days: 30
+          pattern: WireDesk-*
+          merge-multiple: true
+          path: dist
+      - name: Sign and verify OTA archives
+        env:
+          OTA_KEY: ${{ secrets.SPARKLE_EDDSA_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          python3 scripts/check-version.py "$GITHUB_REF_NAME"
+          test -n "$OTA_KEY" || { echo 'SPARKLE_EDDSA_PRIVATE_KEY is required'; exit 1; }
+          curl -fL https://github.com/sparkle-project/Sparkle/releases/download/2.10.0/Sparkle-2.10.0.tar.xz -o "$RUNNER_TEMP/sparkle.tar.xz"
+          mkdir "$RUNNER_TEMP/sparkle"
+          tar -xf "$RUNNER_TEMP/sparkle.tar.xz" -C "$RUNNER_TEMP/sparkle"
+          umask 077
+          printf '%s' "$OTA_KEY" > "$RUNNER_TEMP/ota.key"
+          trap 'rm -f "$RUNNER_TEMP/ota.key"' EXIT
+          python3 scripts/publish-appcasts.py --sign-tool "$RUNNER_TEMP/sparkle/bin/sign_update" --key-file "$RUNNER_TEMP/ota.key" --mac dist/WireDesk-mac-universal.zip --windows "dist/WireDesk-Setup-$(cat VERSION).exe" --output dist
+          shasum -a 256 dist/*.zip dist/*.exe > dist/SHA256SUMS.txt
+      - name: Publish release and feeds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --title "WireDesk $(cat VERSION)" --notes-file docs/release-notes.md --verify-tag

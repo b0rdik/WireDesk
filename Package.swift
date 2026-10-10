@@ -10,9 +10,13 @@ let package = Package(
         .iOS(.v13)    // Target iOS 13+ for Receiver
     ],
     products: [
+        .executable(name: "WireDesk", targets: ["BetterCastSender"]),
         .executable(name: "BetterCastSender", targets: ["BetterCastSender"]),
         .executable(name: "BetterCastReceiver", targets: ["BetterCastReceiver"]),
         .executable(name: "BetterCastReceiverIOS", targets: ["BetterCastReceiverIOS"]),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", exact: "2.10.0"),
     ],
     targets: [
         // Static library for Objective-C VirtualDisplay code
@@ -26,9 +30,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "BetterCastSender",
-            dependencies: ["VirtualDisplayLib"],
+            dependencies: ["VirtualDisplayLib", .product(name: "Sparkle", package: "Sparkle")],
             exclude: ["VirtualDisplay"],
             linkerSettings: [
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "@executable_path/../Frameworks"]),
                 .linkedFramework("ScreenCaptureKit"),
                 .linkedFramework("CoreMedia"),
                 .linkedFramework("VideoToolbox"),

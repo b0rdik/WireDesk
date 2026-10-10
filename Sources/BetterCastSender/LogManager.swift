@@ -1,4 +1,5 @@
 import SwiftUI
+import Sparkle
 
 class LogManager: ObservableObject {
     static let shared = LogManager()
@@ -18,31 +19,14 @@ class LogManager: ObservableObject {
 
 // MARK: - Update Checker
 
-class UpdateChecker: ObservableObject {
+/// Sparkle owns HTTPS fetching, Ed25519 verification, installation, rollback and relaunch.
+final class UpdateChecker: NSObject, ObservableObject, SPUUpdaterDelegate {
     static let shared = UpdateChecker()
-
-    /// Reads version from Info.plist (CFBundleShortVersionString), prefixed with "v"
-    static var currentVersion: String {
-        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
-        // Extract major version number to match GitHub tag format (e.g., "8.0" → "v8")
-        let major = short.components(separatedBy: ".").first ?? short
-        return "v\(major)"
-    }
-
-    static var displayVersion: String {
-        let short = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
-        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0"
-        return "\(short) (\(build))"
-    }
-
-    private static let repoOwner = "StephenLovino"
-    private static let repoName = "BetterCast"
-
+    static var currentVersion: String { "v" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0") }
+    static var displayVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0.0" }
+    static func versionNumber(from tag: String) -> Int { Int(tag.drop(while: { !$0.isNumber }).prefix(while: { $0.isNumber })) ?? 0 }
     @Published var latestVersion: String?
     @Published var downloadURL: String?
-    /// Direct link to the .dmg asset, as opposed to `downloadURL` which is the
-    /// release page. Opening a web page and leaving the user to find the file, save
-    /// it and mount it is four steps to install a fix they already agreed to.
     @Published var assetURL: String?
     @Published var downloadProgress: Double = 0
     @Published var isDownloading = false
@@ -50,118 +34,59 @@ class UpdateChecker: ObservableObject {
     @Published var releaseNotes: String?
     @Published var updateAvailable = false
     @Published var checkedOnce = false
-    fileprivate var progressObservation: NSKeyValueObservation?
-
-    /// Extracts the leading integer from a version tag like "v8", "V7", "v10.2" → 8, 7, 10
-    static func versionNumber(from tag: String) -> Int {
-        let digits = tag.drop(while: { !$0.isNumber })
-        return Int(digits.prefix(while: { $0.isNumber })) ?? 0
+    @Published var automaticChecksEnabled = UserDefaults.standard.object(forKey: "wiredesk.automaticUpdates") as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(automaticChecksEnabled, forKey: "wiredesk.automaticUpdates")
+            controller?.updater.automaticallyChecksForUpdates = automaticChecksEnabled
+        }
     }
-
-    func checkForUpdates() {
-        let urlString = "https://api.github.com/repos/\(Self.repoOwner)/\(Self.repoName)/releases/latest"
-        guard let url = URL(string: urlString) else { return }
-
-        var request = URLRequest(url: url)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.timeoutInterval = 10
-
-        URLSession.shared.dataTask(with: request) { [weak self] data, response, error in
-            guard let data = data, error == nil else { return }
-            guard let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else { return }
-
-            let tagName = json["tag_name"] as? String ?? ""
-            let htmlURL = json["html_url"] as? String ?? ""
-            let body = json["body"] as? String ?? ""
-
-            // Prefer the Mac disk image. A release also carries the Android and
-            // Windows assets, so pick by extension rather than taking the first.
-            let assets = json["assets"] as? [[String: Any]] ?? []
-            let dmg = assets.first { ($0["name"] as? String)?.hasSuffix(".dmg") == true }
-            let dmgURL = dmg?["browser_download_url"] as? String
-
-            DispatchQueue.main.async {
-                self?.latestVersion = tagName
-                self?.downloadURL = htmlURL
-                self?.assetURL = dmgURL
-                self?.releaseNotes = body
-
-                // Numeric comparison: only show update if remote version > local version
-                let remoteNum = Self.versionNumber(from: tagName)
-                let localNum = Self.versionNumber(from: Self.currentVersion)
-                self?.updateAvailable = remoteNum > localNum
-
-                self?.checkedOnce = true
-                if self?.updateAvailable == true {
-                    LogManager.shared.log("Update: \(tagName) available (current: \(Self.currentVersion))")
-                }
-            }
-        }.resume()
+    var mayInstall: () -> Bool = { !ReceiverManager.shared.ethernet.connected }
+    private var controller: SPUStandardUpdaterController?
+    private var started = false
+    private var deferredInstall: (() -> Void)?
+    private var idleTimer: Timer?
+    override init() {
+        super.init()
+        controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: self, userDriverDelegate: nil)
     }
-}
-
-extension UpdateChecker {
-
-    /// Fetch the new version and open it, so updating is one click rather than a
-    /// trip to a web page.
-    ///
-    /// Deliberately stops at opening the mounted image rather than replacing the
-    /// running app in place. Swapping a running bundle needs a helper process and a
-    /// relaunch dance, and getting that subtly wrong leaves someone with no working
-    /// app at all. Finder's copy is the step people already know.
+    func start() {
+        guard !started, Bundle.main.bundleURL.pathExtension == "app" else { return }
+        do {
+            try controller?.updater.start()
+            started = true
+            controller?.updater.automaticallyChecksForUpdates = automaticChecksEnabled
+            controller?.updater.automaticallyDownloadsUpdates = automaticChecksEnabled
+            controller?.updater.updateCheckInterval = 86400
+        } catch { downloadError = error.localizedDescription }
+    }
+    func checkForUpdates() { start(); if started && mayInstall() { controller?.updater.checkForUpdatesInBackground() } }
     func downloadAndOpen() {
-        guard !isDownloading else { return }
-        guard let urlString = assetURL, let url = URL(string: urlString) else {
-            // No .dmg on the release: fall back to the page rather than doing nothing.
-            if let page = downloadURL, let u = URL(string: page) { NSWorkspace.shared.open(u) }
-            return
-        }
-
-        isDownloading = true
-        downloadProgress = 0
-        downloadError = nil
-        LogManager.shared.log("Update: downloading \(url.lastPathComponent)")
-
-        let task = URLSession.shared.downloadTask(with: url) { [weak self] tmp, response, error in
-            DispatchQueue.main.async { self?.isDownloading = false }
-
-            if let error = error {
-                DispatchQueue.main.async {
-                    self?.downloadError = error.localizedDescription
-                    LogManager.shared.log("Update: download failed — \(error.localizedDescription)")
-                }
-                return
-            }
-            guard let tmp = tmp else { return }
-
-            // Move out of the temporary directory, which is emptied from under us,
-            // and into Downloads where the file is findable if anything goes wrong.
-            let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first
-                ?? FileManager.default.temporaryDirectory
-            let dest = downloads.appendingPathComponent(url.lastPathComponent)
-            try? FileManager.default.removeItem(at: dest)
-            do {
-                try FileManager.default.moveItem(at: tmp, to: dest)
-            } catch {
-                DispatchQueue.main.async {
-                    self?.downloadError = error.localizedDescription
-                    LogManager.shared.log("Update: could not save — \(error.localizedDescription)")
-                }
-                return
-            }
-
-            DispatchQueue.main.async {
-                LogManager.shared.log("Update: saved to \(dest.path), opening it")
-                NSWorkspace.shared.open(dest)
-            }
-        }
-
-        // Progress is worth showing: the disk image is several megabytes and a button
-        // that does nothing visible for ten seconds reads as broken.
-        progressObservation = task.progress.observe(\.fractionCompleted) { [weak self] p, _ in
-            DispatchQueue.main.async { self?.downloadProgress = p.fractionCompleted }
-        }
-        task.resume()
+        start()
+        guard mayInstall() else { downloadError = "Остановите активный сеанс перед обновлением."; return }
+        controller?.checkForUpdates(nil)
+    }
+    func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
+        guard mayInstall() else { throw NSError(domain: "WireDeskUpdate", code: 1, userInfo: [NSLocalizedDescriptionKey: "Обновление дождётся окончания активного сеанса."]) }
+    }
+    func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
+        latestVersion = item.displayVersionString; updateAvailable = true; checkedOnce = true
+        downloadURL = "https://github.com/b0rdik/WireDesk/releases/latest"
+        releaseNotes = "Подписанное обновление WireDesk готово к установке."
+    }
+    func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
+        checkedOnce = true
+        if let error { downloadError = error.localizedDescription }
+    }
+    func updater(_ updater: SPUUpdater, shouldPostponeRelaunchForUpdate item: SUAppcastItem, untilInvokingBlock installHandler: @escaping () -> Void) -> Bool {
+        guard !mayInstall() else { return false }
+        deferredInstall = installHandler
+        idleTimer?.invalidate()
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in self?.resumeDeferredInstallation() }
+        return true
+    }
+    func resumeDeferredInstallation() {
+        guard mayInstall(), let action = deferredInstall else { return }
+        deferredInstall = nil; idleTimer?.invalidate(); idleTimer = nil; action()
     }
 }
 

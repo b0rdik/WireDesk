@@ -1,10 +1,6 @@
 name: Build Linux Receiver
 
 on:
-  push:
-    paths:
-      - 'Sources/BetterCastReceiverDesktop/**'
-      - '.github/workflows/build-linux-receiver.yml'
   workflow_dispatch:  # Manual trigger from GitHub UI
 
 env:
@@ -84,9 +80,9 @@ jobs:
           # Create .desktop file (must NOT have leading whitespace)
           cat > "$APPDIR/usr/share/applications/BetterCastReceiver.desktop" << 'EOF'
           [Desktop Entry]
-          Name=BetterCast Receiver
+          Name=WireDesk (legacy receiver)
           Comment=Receive screen cast from BetterCast Sender
-          Exec=BetterCastReceiver
+          Exec=WireDesk
           Icon=bettercast-receiver
           Type=Application
           Categories=Utility;Network;
@@ -110,7 +106,7 @@ jobs:
           export LD_LIBRARY_PATH="$HERE/usr/lib:$HERE/usr/lib/x86_64-linux-gnu:$LD_LIBRARY_PATH"
           export QT_PLUGIN_PATH="$HERE/usr/plugins"
           export QT_QPA_PLATFORM_PLUGIN_PATH="$HERE/usr/plugins/platforms"
-          exec "$HERE/usr/bin/BetterCastReceiver" "$@"
+          exec "$HERE/usr/bin/WireDesk" "$@"
           SCRIPT
           chmod +x "$APPDIR/AppRun"
 

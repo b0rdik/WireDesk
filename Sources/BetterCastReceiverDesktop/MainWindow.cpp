@@ -34,16 +34,34 @@
 #include <QMouseEvent>
 #include <thread>
 #include <QSettings>
+#include <QFormLayout>
+#include <QFileDialog>
+#include <QToolButton>
+#include <QResizeEvent>
+#include <QStyle>
+#include <QUrlQuery>
+#include <QSignalBlocker>
+#include "PairingProfile.h"
+#include "WireDeskUpdater.h"
 
 // ─── Dark theme stylesheet ─────────────────────────────────────────────────────
 
 static const char* kDarkStylesheet = R"(
-    QMainWindow { background-color: #1a1a1a; }
-    QSplitter { background-color: #1a1a1a; }
-    QSplitter::handle { background-color: #333; width: 1px; }
+    QMainWindow { background-color: #09111b; }
+    QFrame#wireHero { background-color: qlineargradient(x1:0,y1:0,x2:1,y2:1,stop:0 #103333,stop:1 #142139); border:1px solid #244449; border-radius:22px; }
+    QPushButton#primaryAction { background-color:#6de5c6; color:#0b2020; font-weight:700; border:none; padding:12px 20px; border-radius:10px; }
+    QPushButton#primaryAction:hover { background-color:#95f0d9; }
+    QPushButton#primaryAction:disabled { background-color:#20354a; color:#71899e; }
+    QToolButton { color:#a3bacd; border:none; padding:10px 0; }
+    QLabel#connectionStatus { background-color:#112234; border:1px solid #20394f; border-radius:12px; padding:16px; }
+    QScrollBar:vertical { background:#09111b; width:8px; }
+    QScrollBar::handle:vertical { background:#294257; border-radius:4px; min-height:24px; }
+    QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical { height:0; }
+    QSplitter { background-color: #09111b; }
+    QSplitter::handle { background-color: #20354a; width: 1px; }
 
     QListWidget {
-        background-color: #1e1e1e;
+        background-color: #0d1825;
         border: none;
         outline: none;
         font-size: 13px;
@@ -57,45 +75,46 @@ static const char* kDarkStylesheet = R"(
     }
     QListWidget::item:selected {
         background-color: rgba(0, 120, 212, 0.18);
-        color: #4da6ff;
+        color: #75e5ce;
     }
     QListWidget::item:hover:!selected {
         background-color: rgba(255, 255, 255, 0.05);
     }
 
-    QStackedWidget { background-color: #1a1a1a; }
-    QScrollArea { background-color: #1a1a1a; border: none; }
-    QScrollArea > QWidget > QWidget { background-color: #1a1a1a; }
+    QStackedWidget { background-color: #09111b; }
+    QScrollArea { background-color: #09111b; border: none; }
+    QScrollArea > QWidget > QWidget { background-color: #09111b; }
 
-    QLabel { color: #e0e0e0; }
+    QLabel { color: #e4edf7; }
 
     QLineEdit {
-        background-color: #2a2a2a;
+        background-color: #132337;
         color: white;
-        border: 1px solid #444;
+        border: 1px solid #2b465f;
         border-radius: 6px;
         padding: 7px 10px;
         font-size: 13px;
-        selection-background-color: #0078D4;
+        selection-background-color: #53c9ae;
     }
-    QLineEdit:focus { border-color: #0078D4; }
+    QLineEdit:focus { border-color: #53c9ae; }
 
     QPushButton {
-        background-color: #333;
+        background-color: #20354a;
         color: white;
         border: 1px solid #555;
         border-radius: 6px;
         padding: 8px 16px;
         font-size: 13px;
     }
-    QPushButton:hover { background-color: #444; border-color: #666; }
+    QPushButton:hover { background-color: #2b465f; border-color: #666; }
     QPushButton:pressed { background-color: #555; }
-    QPushButton:disabled { background-color: #2a2a2a; color: #666; border-color: #333; }
+    QPushButton:disabled { background-color: #132337; color: #666; border-color: #20354a; }
 
     QGroupBox {
         color: #888;
-        border: 1px solid #333;
-        border-radius: 10px;
+        border: 1px solid #20354a;
+        background-color: #0e1c2b;
+        border-radius: 18px;
         margin-top: 16px;
         padding: 20px 16px 12px 16px;
         font-size: 12px;
@@ -117,43 +136,43 @@ static const char* kDarkStylesheet = R"(
     }
 
     QSpinBox {
-        background-color: #2a2a2a;
+        background-color: #132337;
         color: white;
-        border: 1px solid #444;
+        border: 1px solid #2b465f;
         border-radius: 6px;
         padding: 5px 8px;
         font-size: 13px;
     }
-    QSpinBox:focus { border-color: #0078D4; }
+    QSpinBox:focus { border-color: #53c9ae; }
     QSpinBox::up-button, QSpinBox::down-button {
-        background-color: #333;
+        background-color: #20354a;
         border: none;
         width: 20px;
     }
 
     QComboBox {
-        background-color: #2a2a2a;
+        background-color: #132337;
         color: white;
-        border: 1px solid #444;
+        border: 1px solid #2b465f;
         border-radius: 6px;
         padding: 5px 8px;
         font-size: 13px;
     }
-    QComboBox:focus { border-color: #0078D4; }
+    QComboBox:focus { border-color: #53c9ae; }
     QComboBox::drop-down { border: none; }
     QComboBox QAbstractItemView {
-        background-color: #2a2a2a;
+        background-color: #132337;
         color: white;
-        selection-background-color: #0078D4;
+        selection-background-color: #53c9ae;
     }
 
-    QCheckBox { color: #e0e0e0; font-size: 13px; spacing: 8px; }
+    QCheckBox { color: #e4edf7; font-size: 13px; spacing: 8px; }
     QCheckBox::indicator {
         width: 16px; height: 16px;
         border: 1px solid #555; border-radius: 4px;
-        background-color: #2a2a2a;
+        background-color: #132337;
     }
-    QCheckBox::indicator:checked { background-color: #0078D4; border-color: #0078D4; }
+    QCheckBox::indicator:checked { background-color: #53c9ae; border-color: #53c9ae; }
 )";
 
 // ─── Sidebar section header helper ──────────────────────────────────────────────
@@ -177,7 +196,10 @@ static QListWidgetItem* addSidebarSection(QListWidget* list, const QString& titl
 
 static QListWidgetItem* addSidebarItem(QListWidget* list, const QString& icon,
                                         const QString& title, int pageIndex) {
-    auto* item = new QListWidgetItem(QString("%1  %2").arg(icon, title));
+    Q_UNUSED(icon);
+    auto* item = new QListWidgetItem(title);
+    item->setIcon(QApplication::style()->standardIcon(QStyle::SP_ComputerIcon));
+    item->setData(Qt::UserRole+1,title);
     item->setData(Qt::UserRole, pageIndex);
     item->setSizeHint(QSize(0, 34));
     list->addItem(item);
@@ -196,8 +218,9 @@ static QGroupBox* makeCard(const QString& title) {
 MainWindow::MainWindow(QWidget* parent)
     : QMainWindow(parent)
 {
-    setWindowTitle("BetterCast");
-    setMinimumSize(800, 500);
+    setWindowTitle("WireDesk");
+    setMinimumSize(620, 500);
+    m_updater = new WireDeskUpdater(this);
 
     // Crash detection: check if previous session exited cleanly
     QString crashMarker = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation) + "/running.lock";
@@ -206,8 +229,8 @@ MainWindow::MainWindow(QWidget* parent)
         QTimer::singleShot(500, this, [this]() {
             auto* dialog = new QMessageBox(this);
             dialog->setIcon(QMessageBox::Warning);
-            dialog->setWindowTitle("BetterCast crashed last time");
-            dialog->setText("BetterCast didn't exit cleanly last time. Would you like to report this issue on GitHub?");
+            dialog->setWindowTitle("WireDesk crashed last time");
+            dialog->setText("WireDesk didn't exit cleanly last time. Would you like to report this issue on GitHub?");
             dialog->setStandardButtons(QMessageBox::Yes | QMessageBox::No);
             dialog->setDefaultButton(QMessageBox::Yes);
             if (dialog->exec() == QMessageBox::Yes) {
@@ -245,10 +268,14 @@ MainWindow::MainWindow(QWidget* parent)
         LogManager::instance().log("Sender error: " + msg);
     });
     connect(m_sender, &SenderController::connected, this, [this]() {
-        if (m_senderStatusLabel) m_senderStatusLabel->setText("Sending screen...");
+        m_streamConnected = true;
+        m_updater->setSessionActive(true);
+        if (m_senderStatusLabel) m_senderStatusLabel->setText("Второй экран подключён");
         LogManager::instance().log("Sender: Connected and streaming");
     });
+    connect(m_sender, &SenderController::disconnected, this, [this]() { m_streamConnected=false; m_updater->setSessionActive(!m_network->clients().isEmpty()); });
     connect(m_sender, &SenderController::stopped, this, [this]() {
+        m_streamConnected=false; m_updater->setSessionActive(!m_network->clients().isEmpty());
         if (m_sendBtn) m_sendBtn->setEnabled(true);
         if (m_stopSendBtn) m_stopSendBtn->setEnabled(false);
         if (m_sendHostEdit) m_sendHostEdit->setEnabled(true);
@@ -321,6 +348,7 @@ MainWindow::MainWindow(QWidget* parent)
             this, &MainWindow::onLogAdded);
 
     setupUi();
+    QTimer::singleShot(1000,m_updater,&WireDeskUpdater::start);
 
     // Start services
 #ifdef ENABLE_SENDER
@@ -345,7 +373,7 @@ MainWindow::MainWindow(QWidget* parent)
     }
     }
 #endif
-    LogManager::instance().log(QString("BetterCast started — listening on port %1").arg(actualPort));
+    LogManager::instance().log(QString("WireDesk started — listening on port %1").arg(actualPort));
 #ifdef _WIN32
     LogManager::instance().log("Firewall: not modified by application; configure explicit scoped rules if needed (docs/ethernet-second-display.md)");
 #endif
@@ -379,7 +407,8 @@ void MainWindow::setupUi() {
 
     // Sidebar
     m_sidebarList = new QListWidget();
-    m_sidebarList->setFixedWidth(220);
+    m_sidebarList->setFixedWidth(180);
+    m_sidebarList->setIconSize(QSize(22,22));
     m_sidebarList->setFocusPolicy(Qt::NoFocus);
     m_sidebarList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
@@ -410,25 +439,28 @@ void MainWindow::setupUi() {
     connect(m_sidebarList, &QListWidget::currentRowChanged,
             this, &MainWindow::onSidebarSelectionChanged);
 
-    // Select Overview by default
+#ifdef ENABLE_SENDER
+    selectSidebarItem(m_pageSend);
+#else
     selectSidebarItem(m_pageOverview);
+#endif
 }
 
 void MainWindow::setupSidebar() {
     addSidebarSection(m_sidebarList, "DEVICES");
-    addSidebarItem(m_sidebarList, QString::fromUtf8("\xF0\x9F\x96\xA5"), "Overview", m_pageOverview);
+    addSidebarItem(m_sidebarList, QString::fromUtf8("\xF0\x9F\x96\xA5"), "Все устройства", m_pageOverview);
 
 #ifdef ENABLE_SENDER
     addSidebarSection(m_sidebarList, "SEND");
-    addSidebarItem(m_sidebarList, QString::fromUtf8("\xF0\x9F\x93\xA4"), "Send Screen", m_pageSend);
+    addSidebarItem(m_sidebarList, QString::fromUtf8("\xF0\x9F\x93\xA4"), "Второй экран", m_pageSend);
 #endif
 
     addSidebarSection(m_sidebarList, "RECEIVE");
-    addSidebarItem(m_sidebarList, QString::fromUtf8("\xF0\x9F\x93\xA5"), "Receive Screen", m_pageReceive);
+    addSidebarItem(m_sidebarList, QString::fromUtf8("\xF0\x9F\x93\xA5"), "Приём экрана", m_pageReceive);
 
     addSidebarSection(m_sidebarList, "");
-    addSidebarItem(m_sidebarList, QString::fromUtf8("\xE2\x9A\x99"), "Settings", m_pageSettings);
-    addSidebarItem(m_sidebarList, QString::fromUtf8("\xF0\x9F\x93\x9C"), "Logs", m_pageLogs);
+    addSidebarItem(m_sidebarList, QString::fromUtf8("\xE2\x9A\x99"), "Настройки", m_pageSettings);
+    addSidebarItem(m_sidebarList, QString::fromUtf8("\xF0\x9F\x93\x9C"), "Диагностика", m_pageLogs);
 }
 
 // ─── Overview Page ──────────────────────────────────────────────────────────────
@@ -454,7 +486,7 @@ void MainWindow::setupOverviewPage() {
     layout->addWidget(iconLabel);
 
     // Title
-    auto* title = new QLabel("BetterCast");
+    auto* title = new QLabel("WireDesk");
     title->setStyleSheet("font-size: 28px; font-weight: bold; color: white;");
     title->setAlignment(Qt::AlignCenter);
     layout->addWidget(title);
@@ -479,14 +511,14 @@ void MainWindow::setupOverviewPage() {
         numLabel->setFixedSize(28, 28);
         numLabel->setAlignment(Qt::AlignCenter);
         numLabel->setStyleSheet(
-            "background-color: #0078D4; color: white; font-weight: bold; "
+            "background-color: #53c9ae; color: white; font-weight: bold; "
             "font-size: 13px; border-radius: 14px;");
         row->addWidget(numLabel);
 
         auto* textLayout = new QVBoxLayout();
         textLayout->setSpacing(2);
         auto* titleLabel = new QLabel(title);
-        titleLabel->setStyleSheet("font-size: 14px; font-weight: bold; color: #e0e0e0;");
+        titleLabel->setStyleSheet("font-size: 14px; font-weight: bold; color: #e4edf7;");
         textLayout->addWidget(titleLabel);
         auto* descLabel = new QLabel(desc);
         descLabel->setStyleSheet("font-size: 12px; color: #888;");
@@ -498,7 +530,7 @@ void MainWindow::setupOverviewPage() {
     };
 
     addStep(1, "Download the Receiver",
-            "Install BetterCast Receiver on your iPad, Android, Windows, Linux, or Mac.");
+            "Install WireDesk Receiver on your iPad, Android, Windows, Linux, or Mac.");
     addStep(2, "Connect to the Same Network",
             "Make sure both devices are on the same Wi-Fi network.");
     addStep(3, "Open the Receiver App",
@@ -531,298 +563,74 @@ void MainWindow::setupOverviewPage() {
 #ifdef ENABLE_SENDER
 void MainWindow::setupSendPage() {
     auto* page = new QWidget();
-    auto* scroll = new QScrollArea();
-    scroll->setWidget(page);
-    scroll->setWidgetResizable(true);
-
-    auto* layout = new QVBoxLayout(page);
-    layout->setContentsMargins(40, 30, 40, 30);
-    layout->setSpacing(16);
-
-    auto* pageTitle = new QLabel("Send Screen");
-    pageTitle->setStyleSheet("font-size: 22px; font-weight: bold; color: white;");
-    layout->addWidget(pageTitle);
-
-    auto* pageDesc = new QLabel("Stream your screen to a BetterCast receiver on another device.");
-    pageDesc->setStyleSheet("font-size: 13px; color: #888;");
-    pageDesc->setWordWrap(true);
-    layout->addWidget(pageDesc);
-
-    layout->addSpacing(8);
-
-    // ─── Virtual Display card ──────────────────────────────────────────
-    auto* vddCard = makeCard("Virtual Display (Extend Screen)");
-    auto* vddLayout = new QVBoxLayout(vddCard);
-    vddLayout->setSpacing(10);
-
-    // VDD status
-    m_vddStatusLabel = new QLabel();
-    bool vddInstalled = m_sender && m_sender->vdd() && m_sender->vdd()->isVddInstalled();
-    if (vddInstalled) {
-        m_vddStatusLabel->setText("Virtual Display Driver detected");
-        m_vddStatusLabel->setStyleSheet("font-size: 13px; color: #4caf50;");
-    } else {
-        m_vddStatusLabel->setText(
-            "Virtual Display Driver not found — install from "
-            "github.com/VirtualDrivers/Virtual-Display-Driver");
-        m_vddStatusLabel->setStyleSheet("font-size: 12px; color: #ff9800;");
-    }
-    m_vddStatusLabel->setWordWrap(true);
-    vddLayout->addWidget(m_vddStatusLabel);
-
-    // Re-check button (shown when VDD not detected)
-    m_recheckVddBtn = new QPushButton("Re-check VDD Installation");
-    m_recheckVddBtn->setVisible(!vddInstalled);
-    m_recheckVddBtn->setStyleSheet(
-        "QPushButton { background-color: #333; color: #4da6ff; padding: 6px 14px; "
-        "border-radius: 5px; font-size: 12px; border: 1px solid #4da6ff; }"
-        "QPushButton:hover { background-color: #1a3a5c; }");
-    connect(m_recheckVddBtn, &QPushButton::clicked, this, [this]() {
-        if (!m_sender || !m_sender->vdd()) return;
-        m_sender->vdd()->refreshInstallStatus();
-        bool found = m_sender->vdd()->isVddInstalled();
-        if (found) {
-            m_vddStatusLabel->setText("Virtual Display Driver detected");
-            m_vddStatusLabel->setStyleSheet("font-size: 13px; color: #4caf50;");
-            m_recheckVddBtn->setVisible(false);
-            m_vddResolutionCombo->setEnabled(true);
-            m_createVddBtn->setEnabled(true);
-        } else {
-            m_vddStatusLabel->setText(
-                "Still not detected — make sure VDD is installed and try restarting the app");
-            m_vddStatusLabel->setStyleSheet("font-size: 12px; color: #ff9800;");
-        }
-    });
-    vddLayout->addWidget(m_recheckVddBtn);
-
-    // Resolution picker
-    auto* resRow = new QHBoxLayout();
-    auto* resLabel = new QLabel("Resolution:");
-    resLabel->setStyleSheet("font-size: 13px; color: #ccc;");
-    resRow->addWidget(resLabel);
-
-    m_vddResolutionCombo = new QComboBox();
-    m_vddResolutionCombo->addItem("1920 x 1080", QVariant::fromValue(QSize(1920, 1080)));
-    m_vddResolutionCombo->addItem("2560 x 1440", QVariant::fromValue(QSize(2560, 1440)));
-    m_vddResolutionCombo->addItem("3840 x 2160", QVariant::fromValue(QSize(3840, 2160)));
-    m_vddResolutionCombo->addItem("1920 x 1200", QVariant::fromValue(QSize(1920, 1200)));
-    m_vddResolutionCombo->addItem("2560 x 1600", QVariant::fromValue(QSize(2560, 1600)));
-    m_vddResolutionCombo->addItem("1280 x 720",  QVariant::fromValue(QSize(1280, 720)));
-    m_vddResolutionCombo->addItem("1024 x 768",  QVariant::fromValue(QSize(1024, 768)));
-    m_vddResolutionCombo->setFixedWidth(240);
-    m_vddResolutionCombo->setEnabled(vddInstalled);
-    resRow->addWidget(m_vddResolutionCombo);
-    m_refreshRateCombo = new QComboBox();
-    m_refreshRateCombo->addItem("60 Hz", 60); m_refreshRateCombo->addItem("120 Hz", 120);
-    QSettings displaySettings;
-    m_refreshRateCombo->setCurrentIndex(displaySettings.value("sender/virtualHz", 60).toInt() == 120 ? 1 : 0);
-    const QSize savedResolution(displaySettings.value("sender/virtualWidth", 1920).toInt(), displaySettings.value("sender/virtualHeight", 1080).toInt());
-    for (int i = 0; i < m_vddResolutionCombo->count(); ++i) if (m_vddResolutionCombo->itemData(i).toSize() == savedResolution) m_vddResolutionCombo->setCurrentIndex(i);
-    resRow->addWidget(m_refreshRateCombo);
-    resRow->addStretch();
-    vddLayout->addLayout(resRow);
-
-    // Create / Remove buttons
-    auto* vddBtnRow = new QHBoxLayout();
-    vddBtnRow->setSpacing(10);
-
-    m_createVddBtn = new QPushButton("Use Installed Virtual Display");
-    m_createVddBtn->setEnabled(vddInstalled);
-    m_createVddBtn->setStyleSheet(
-        "QPushButton { background-color: #4caf50; color: white; font-weight: bold; "
-        "padding: 8px 18px; border-radius: 6px; border: none; }"
-        "QPushButton:hover { background-color: #66bb6a; }"
-        "QPushButton:disabled { background-color: #2a2a2a; color: #666; }");
-    connect(m_createVddBtn, &QPushButton::clicked, this, &MainWindow::onCreateVirtualDisplay);
-    vddBtnRow->addWidget(m_createVddBtn);
-
-    m_removeVddBtn = new QPushButton("Remove");
-    m_removeVddBtn->setEnabled(false);
-    m_removeVddBtn->setStyleSheet(
-        "QPushButton { background-color: #333; color: #ccc; padding: 8px 18px; "
-        "border-radius: 6px; font-size: 13px; border: 1px solid #555; }"
-        "QPushButton:hover { background-color: #444; }"
-        "QPushButton:disabled { background-color: #2a2a2a; color: #666; }");
-    connect(m_removeVddBtn, &QPushButton::clicked, this, &MainWindow::onRemoveVirtualDisplay);
-    vddBtnRow->addWidget(m_removeVddBtn);
-
-    vddBtnRow->addStretch();
-    vddLayout->addLayout(vddBtnRow);
-
-    layout->addWidget(vddCard);
-
-    // ─── Monitor Selection card ────────────────────────────────────────
-    auto* monCard = makeCard("Monitor to Stream");
-    auto* monLayout = new QVBoxLayout(monCard);
-    monLayout->setSpacing(10);
-
-    auto* monDesc = new QLabel("Select which display to capture and stream:");
-    monDesc->setStyleSheet("font-size: 12px; color: #888;");
-    monLayout->addWidget(monDesc);
-
-    auto* monRow = new QHBoxLayout();
-    m_monitorCombo = new QComboBox();
-    m_monitorCombo->setMinimumWidth(300);
-    connect(m_monitorCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &MainWindow::onMonitorSelected);
-    monRow->addWidget(m_monitorCombo);
-
-    auto* refreshBtn = new QPushButton("Refresh");
-    refreshBtn->setStyleSheet(
-        "QPushButton { background-color: #333; color: #ccc; padding: 6px 14px; "
-        "border-radius: 6px; font-size: 12px; border: 1px solid #555; }"
-        "QPushButton:hover { background-color: #444; }");
-    connect(refreshBtn, &QPushButton::clicked, this, &MainWindow::onRefreshMonitors);
-    monRow->addWidget(refreshBtn);
-
-    monRow->addStretch();
-    monLayout->addLayout(monRow);
-
-    layout->addWidget(monCard);
-
-    // Populate monitor list
-    onRefreshMonitors();
-
-    // Enable Remove button if virtual displays already exist from previous sessions
-    if (m_removeVddBtn && m_monitorCombo) {
-        for (int i = 0; i < m_monitorCombo->count(); i++) {
-            QVariantMap data = m_monitorCombo->itemData(i).toMap();
-            if (data.value("virtual", false).toBool()) {
-                m_removeVddBtn->setEnabled(true);
-                break;
-            }
-        }
-    }
-
-    // ─── Connection card ───────────────────────────────────────────────
-    auto* connCard = makeCard("Target Receiver");
-    auto* connLayout = new QVBoxLayout(connCard);
-    connLayout->setSpacing(12);
-
-    // Discovered receivers dropdown
-    auto* discLabel = new QLabel("Discovered Receivers:");
-    discLabel->setStyleSheet("font-size: 13px; color: #ccc;");
-    connLayout->addWidget(discLabel);
-
-    m_receiverCombo = new QComboBox();
-    m_receiverCombo->addItem("Searching for receivers...");
-    m_receiverCombo->setEnabled(false);
-    connect(m_receiverCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, &MainWindow::onReceiverSelected);
-    connLayout->addWidget(m_receiverCombo);
-
-    connLayout->addSpacing(4);
-
-    auto* orLabel = new QLabel(QString::fromUtf8("\xe2\x80\x94 or enter IP manually \xe2\x80\x94"));
-    orLabel->setStyleSheet("font-size: 11px; color: #666;");
-    orLabel->setAlignment(Qt::AlignCenter);
-    connLayout->addWidget(orLabel);
-
-    auto* hostRow = new QHBoxLayout();
-    auto* hostLabel = new QLabel("Receiver IP:");
-    hostLabel->setStyleSheet("font-size: 13px; color: #ccc;");
-    hostRow->addWidget(hostLabel);
-    m_sendHostEdit = new QLineEdit();
-    m_sendHostEdit->setPlaceholderText("e.g. 192.168.1.50");
-    m_sendHostEdit->setFixedWidth(200);
-    hostRow->addWidget(m_sendHostEdit);
-    hostRow->addStretch();
-    connLayout->addLayout(hostRow);
+    auto* scroll = new QScrollArea(); scroll->setWidget(page); scroll->setWidgetResizable(true);
+    auto* layout = new QVBoxLayout(page); m_sendLayout = layout;
+    layout->setContentsMargins(28, 28, 28, 28); layout->setSpacing(20);
+    auto* header = new QHBoxLayout();
+    auto* icon = new QLabel(); icon->setPixmap(QPixmap(":/appicon.png").scaled(48,48,Qt::KeepAspectRatio,Qt::SmoothTransformation)); header->addWidget(icon);
+    auto* brand = new QLabel("WireDesk"); brand->setStyleSheet("font-size: 24px; font-weight: 700; color: #eaf4ff;"); header->addWidget(brand); header->addStretch();
+    auto* tag = new QLabel("WINDOWS → MAC"); tag->setStyleSheet("color: #73eaca; font-size: 11px; letter-spacing: 1px;"); header->addWidget(tag); layout->addLayout(header);
+    auto* hero = new QFrame(); hero->setObjectName("wireHero");
+    auto* heroLayout = new QVBoxLayout(hero); heroLayout->setContentsMargins(24,24,24,24); heroLayout->setSpacing(10);
+    auto* title = new QLabel("Ваш Mac. Ещё один экран."); title->setWordWrap(true); title->setStyleSheet("font-size: 28px; font-weight: 700; color: white;"); heroLayout->addWidget(title);
+    auto* subtitle = new QLabel("Соедините устройства кабелем и переносите окна на Mac. Интернет может оставаться на другой сети."); subtitle->setWordWrap(true); subtitle->setStyleSheet("color: #a7bfd1; font-size: 14px;"); heroLayout->addWidget(subtitle);
+    auto* badge = new QLabel("До 120 FPS   ·   Защищённое соединение   ·   Без облака"); badge->setWordWrap(true); badge->setStyleSheet("color: #73eaca; font-size: 12px;"); heroLayout->addWidget(badge); layout->addWidget(hero);
+    m_setupCards = new QBoxLayout(QBoxLayout::LeftToRight); m_setupCards->setSpacing(16);
+    auto* ethernetCard = makeCard("1  Подключите кабель"); auto* eth = new QVBoxLayout(ethernetCard);
+    auto* cableText = new QLabel("Свободный Ethernet-порт Windows → адаптер Mac. Выберите выделенное подключение."); cableText->setWordWrap(true); eth->addWidget(cableText);
+    m_ethernetCombo = new QComboBox(); m_ethernetCombo->setObjectName("ethernetAdapter"); m_ethernetCombo->setMinimumContentsLength(12); m_ethernetCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon); eth->addWidget(m_ethernetCombo);
+    auto* networkButtons = new QHBoxLayout();
+    auto* refresh = new QPushButton("Обновить"); connect(refresh,&QPushButton::clicked,this,&MainWindow::refreshEthernetInterfaces); networkButtons->addWidget(refresh);
+    auto* networkSettings = new QPushButton("Настройки сети"); connect(networkSettings,&QPushButton::clicked,this,[]{ QDesktopServices::openUrl(QUrl("ms-settings:network-ethernet")); }); networkButtons->addWidget(networkSettings); eth->addLayout(networkButtons);
+    auto* networkHelp = new QLabel("Автоматические 169.254.x.x работают без роутера. При ручной настройке используйте отдельную подсеть без шлюза и DNS."); networkHelp->setWordWrap(true); networkHelp->setStyleSheet("font-size: 11px; color: #8cabc2;"); eth->addWidget(networkHelp); eth->addStretch();
+    m_setupCards->addWidget(ethernetCard,1);
+    auto* pairingCard = makeCard("2  Свяжите устройства"); auto* pair = new QVBoxLayout(pairingCard);
+    auto* pairingHelp = new QLabel("На Mac нажмите «Скопировать код». Вставьте его здесь или откройте файл сопряжения."); pairingHelp->setWordWrap(true); pair->addWidget(pairingHelp);
+    auto* codeEdit = new QLineEdit(); codeEdit->setObjectName("pairingCode"); codeEdit->setPlaceholderText("wiredesk://pair?…"); pair->addWidget(codeEdit);
+    auto* pairActions = new QHBoxLayout();
+    auto* paste = new QPushButton("Вставить код"); connect(paste,&QPushButton::clicked,this,[this,codeEdit]{ const auto code=QApplication::clipboard()->text(); codeEdit->setText(code); importPairingCode(code); }); pairActions->addWidget(paste);
+    auto* import = new QPushButton("Открыть файл"); connect(import,&QPushButton::clicked,this,[this]{ const auto path=QFileDialog::getOpenFileName(this,"Файл сопряжения Mac",{},"WireDesk (*.wiredesk-pair)"); if(path.isEmpty())return; QFile file(path); if(file.open(QIODevice::ReadOnly)&&file.size()<=4096)importPairingCode(QString::fromUtf8(file.readAll())); }); pairActions->addWidget(import); pair->addLayout(pairActions);
+    connect(codeEdit,&QLineEdit::returnPressed,this,[this,codeEdit]{ importPairingCode(codeEdit->text()); });
+    auto* trust = new QLabel("Первое подключение нужно подтвердить на Mac. Приватный ключ по сети не передаётся."); trust->setWordWrap(true); trust->setStyleSheet("font-size: 11px; color: #8cabc2;"); pair->addWidget(trust); pair->addStretch(); m_setupCards->addWidget(pairingCard,1); layout->addLayout(m_setupCards);
     QSettings saved;
-    m_dedicatedEthernet = new QCheckBox("Dedicated Ethernet (TLS, manual IPv4, no discovery/fallback)");
-    m_dedicatedEthernet->setChecked(saved.value("ethernet/enabled", false).toBool());
-    connLayout->addWidget(m_dedicatedEthernet);
-    m_ethernetCombo = new QComboBox();
-    for (const auto& iface : QNetworkInterface::allInterfaces()) {
-        if (iface.type() != QNetworkInterface::Ethernet) continue;
-        for (const auto& entry : iface.addressEntries()) {
-            if (entry.ip().protocol() != QAbstractSocket::IPv4Protocol) continue;
-            QVariantMap data; data["name"] = iface.name(); data["ip"] = entry.ip().toString();
-            m_ethernetCombo->addItem(QString("%1 — %2").arg(iface.humanReadableName(), entry.ip().toString()), data);
-            if (saved.value("ethernet/interface").toString() == iface.name() && saved.value("ethernet/localIP").toString() == entry.ip().toString())
-                m_ethernetCombo->setCurrentIndex(m_ethernetCombo->count() - 1);
-        }
-    }
-    connLayout->addWidget(new QLabel("Local Ethernet interface/IP (restart app to refresh addresses):"));
-    connLayout->addWidget(m_ethernetCombo);
-    m_certificatePinEdit = new QLineEdit(saved.value("ethernet/pin").toString());
-    m_certificatePinEdit->setPlaceholderText("Mac certificate SHA-256 fingerprint (64 hex characters)");
-    connLayout->addWidget(m_certificatePinEdit);
-    m_sendHostEdit->setText(saved.value("sender/host").toString());
-    connect(m_dedicatedEthernet, &QCheckBox::toggled, this, &MainWindow::applyEthernetMode);
-
-    layout->addWidget(connCard);
-
-    // ─── Quality card ──────────────────────────────────────────────────
-    auto* qualCard = makeCard("Stream Quality");
-    auto* qualLayout = new QVBoxLayout(qualCard);
-    qualLayout->setSpacing(10);
-
-    auto* fpsRow = new QHBoxLayout();
-    auto* fpsLabel = new QLabel("Frame Rate:");
-    fpsLabel->setStyleSheet("font-size: 13px; color: #ccc;");
-    fpsRow->addWidget(fpsLabel);
-    m_fpsSpinBox = new QSpinBox();
-    m_fpsSpinBox->setRange(60, 120);
-    m_fpsSpinBox->setSingleStep(60);
-    m_fpsSpinBox->setValue(saved.value("sender/fps", 60).toInt());
-    m_fpsSpinBox->setSuffix(" FPS");
-    m_fpsSpinBox->setFixedWidth(100);
-    fpsRow->addWidget(m_fpsSpinBox);
-    fpsRow->addStretch();
-    qualLayout->addLayout(fpsRow);
-
-    auto* brRow = new QHBoxLayout();
-    auto* brLabel = new QLabel("Bitrate:");
-    brLabel->setStyleSheet("font-size: 13px; color: #ccc;");
-    brRow->addWidget(brLabel);
-    m_bitrateSpinBox = new QSpinBox();
-    m_bitrateSpinBox->setRange(2, 100);
-    m_bitrateSpinBox->setValue(saved.value("sender/bitrate", 20).toInt());
-    m_bitrateSpinBox->setSuffix(" Mbps");
-    m_bitrateSpinBox->setFixedWidth(100);
-    brRow->addWidget(m_bitrateSpinBox);
-    brRow->addStretch();
-    qualLayout->addLayout(brRow);
-
-    layout->addWidget(qualCard);
-
-    // ─── Action buttons ────────────────────────────────────────────────
-    auto* btnRow = new QHBoxLayout();
-    btnRow->setSpacing(12);
-
-    m_sendBtn = new QPushButton("Send Screen");
-    m_sendBtn->setStyleSheet(
-        "QPushButton { background-color: #0078D4; color: white; font-weight: bold; "
-        "font-size: 14px; padding: 10px 24px; border-radius: 8px; border: none; }"
-        "QPushButton:hover { background-color: #1a8ae8; }"
-        "QPushButton:disabled { background-color: #2a2a2a; color: #666; }");
-    connect(m_sendBtn, &QPushButton::clicked, this, &MainWindow::onSendScreenClicked);
-    btnRow->addWidget(m_sendBtn);
-
-    m_stopSendBtn = new QPushButton("Stop");
-    m_stopSendBtn->setEnabled(false);
-    m_stopSendBtn->setStyleSheet(
-        "QPushButton { background-color: #d32f2f; color: white; font-weight: bold; "
-        "font-size: 14px; padding: 10px 24px; border-radius: 8px; border: none; }"
-        "QPushButton:hover { background-color: #e53935; }"
-        "QPushButton:disabled { background-color: #2a2a2a; color: #666; }");
-    connect(m_stopSendBtn, &QPushButton::clicked, this, &MainWindow::onStopSendingClicked);
-    btnRow->addWidget(m_stopSendBtn);
-
-    btnRow->addStretch();
-    layout->addLayout(btnRow);
-
-    // Status
-    m_senderStatusLabel = new QLabel("Select a monitor and receiver to start streaming");
-    m_senderStatusLabel->setStyleSheet("font-size: 12px; color: #888;");
-    m_senderStatusLabel->setWordWrap(true);
-    layout->addWidget(m_senderStatusLabel);
-
-    layout->addStretch();
-
-    m_pageSend = m_stack->addWidget(scroll);
+    auto* displayCard=makeCard("3  Выберите второй экран"); auto* display=new QVBoxLayout(displayCard);
+    m_vddStatusLabel=new QLabel(); m_vddStatusLabel->setWordWrap(true); display->addWidget(m_vddStatusLabel);
+    m_monitorCombo=new QComboBox(); m_monitorCombo->setObjectName("displayPicker"); m_monitorCombo->setMinimumContentsLength(15); m_monitorCombo->setSizeAdjustPolicy(QComboBox::AdjustToMinimumContentsLengthWithIcon); display->addWidget(m_monitorCombo);
+    connect(m_monitorCombo,QOverload<int>::of(&QComboBox::currentIndexChanged),this,&MainWindow::onMonitorSelected);
+    auto* displayActions=new QHBoxLayout();
+    m_recheckVddBtn=new QPushButton("Обновить экраны"); connect(m_recheckVddBtn,&QPushButton::clicked,this,&MainWindow::onRefreshMonitors); displayActions->addWidget(m_recheckVddBtn);
+    auto* windowsDisplay=new QPushButton("Расширить рабочий стол"); connect(windowsDisplay,&QPushButton::clicked,this,[]{ QDesktopServices::openUrl(QUrl("ms-settings:display")); }); displayActions->addWidget(windowsDisplay); display->addLayout(displayActions);
+    auto* quality=new QFormLayout(); quality->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    m_vddResolutionCombo=new QComboBox();
+    for(const auto& size: {QSize(1920,1080),QSize(2560,1440),QSize(3840,2160),QSize(1920,1200),QSize(2560,1600),QSize(1280,720),QSize(1024,768)}) m_vddResolutionCombo->addItem(QString("%1 × %2").arg(size.width()).arg(size.height()),size);
+    quality->addRow("Разрешение",m_vddResolutionCombo);
+    m_fpsSpinBox=new QSpinBox(); m_fpsSpinBox->setObjectName("streamFPS"); m_fpsSpinBox->setRange(60,120); m_fpsSpinBox->setSingleStep(60); m_fpsSpinBox->setSuffix(" FPS"); m_fpsSpinBox->setValue(saved.value("sender/fps",60).toInt()==120?120:60); quality->addRow("Видеопоток",m_fpsSpinBox);
+    m_refreshRateCombo=new QComboBox(); m_refreshRateCombo->addItem("60 Гц",60); m_refreshRateCombo->addItem("120 Гц",120); m_refreshRateCombo->setCurrentIndex(saved.value("sender/virtualHz",60).toInt()==120?1:0); quality->addRow("Виртуальный монитор",m_refreshRateCombo);
+    m_bitrateSpinBox=new QSpinBox(); m_bitrateSpinBox->setRange(2,100); m_bitrateSpinBox->setSuffix(" Mbps"); m_bitrateSpinBox->setValue(saved.value("sender/bitrate",20).toInt()); quality->addRow("Качество / битрейт",m_bitrateSpinBox); display->addLayout(quality);
+    m_autoDisplay=new QCheckBox("Применять режим к одному установленному VDD автоматически"); m_autoDisplay->setChecked(saved.value("sender/autoDisplay",true).toBool()); display->addWidget(m_autoDisplay);
+    m_createVddBtn=new QPushButton("Применить режим VDD"); connect(m_createVddBtn,&QPushButton::clicked,this,&MainWindow::onCreateVirtualDisplay); display->addWidget(m_createVddBtn);
+    m_removeVddBtn=new QPushButton("Установка и отключение монитора"); connect(m_removeVddBtn,&QPushButton::clicked,this,[]{ QDesktopServices::openUrl(QUrl("https://github.com/b0rdik/WireDesk/blob/main/docs/ethernet-second-display.md#виртуальный-второй-монитор")); }); display->addWidget(m_removeVddBtn);
+    layout->addWidget(displayCard);
+    m_autoConnect=new QCheckBox("Подключаться к сохранённому Mac при запуске"); m_autoConnect->setChecked(saved.value("sender/autoConnect",true).toBool()); layout->addWidget(m_autoConnect);
+    connect(m_autoConnect,&QCheckBox::toggled,this,[](bool value){ QSettings().setValue("sender/autoConnect",value); });
+    connect(m_autoDisplay,&QCheckBox::toggled,this,[](bool value){ QSettings().setValue("sender/autoDisplay",value); });
+    auto* actions=new QHBoxLayout(); m_sendBtn=new QPushButton("Подключить второй экран"); m_sendBtn->setObjectName("primaryAction"); connect(m_sendBtn,&QPushButton::clicked,this,&MainWindow::onSendScreenClicked); actions->addWidget(m_sendBtn);
+    m_stopSendBtn=new QPushButton("Отключить"); m_stopSendBtn->setEnabled(false); connect(m_stopSendBtn,&QPushButton::clicked,this,&MainWindow::onStopSendingClicked); actions->addWidget(m_stopSendBtn); actions->addStretch(); layout->addLayout(actions);
+    m_senderStatusLabel=new QLabel("Начните с кабеля и кода сопряжения Mac."); m_senderStatusLabel->setObjectName("connectionStatus"); m_senderStatusLabel->setWordWrap(true); m_senderStatusLabel->setTextInteractionFlags(Qt::TextSelectableByMouse); layout->addWidget(m_senderStatusLabel);
+    auto* detailsButton=new QToolButton(); detailsButton->setText("Дополнительные настройки"); detailsButton->setCheckable(true); detailsButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon); detailsButton->setArrowType(Qt::RightArrow); layout->addWidget(detailsButton);
+    auto* details=new QGroupBox(); auto* detail=new QFormLayout(details); detail->setFieldGrowthPolicy(QFormLayout::AllNonFixedFieldsGrow);
+    m_sendHostEdit=new QLineEdit(saved.value("sender/host").toString()); m_sendHostEdit->setPlaceholderText("IPv4 Mac"); detail->addRow("Адрес Mac",m_sendHostEdit);
+    m_certificatePinEdit=new QLineEdit(saved.value("ethernet/pin").toString()); m_certificatePinEdit->setPlaceholderText("SHA-256 сертификата Mac"); detail->addRow("Сертификат",m_certificatePinEdit);
+    m_dedicatedEthernet=new QCheckBox("Только выделенный Ethernet (TLS)"); m_dedicatedEthernet->setChecked(saved.value("ethernet/enabled",true).toBool()); detail->addRow(m_dedicatedEthernet);
+    m_receiverCombo=new QComboBox(); m_receiverCombo->addItem("Обнаружение доступно в общем режиме"); detail->addRow("Другие приёмники",m_receiverCombo);
+    connect(m_receiverCombo,QOverload<int>::of(&QComboBox::currentIndexChanged),this,&MainWindow::onReceiverSelected); connect(m_dedicatedEthernet,&QCheckBox::toggled,this,&MainWindow::applyEthernetMode);
+    details->setVisible(false); connect(detailsButton,&QToolButton::toggled,this,[details,detailsButton](bool open){ details->setVisible(open); detailsButton->setArrowType(open?Qt::DownArrow:Qt::RightArrow); }); layout->addWidget(details);
+    layout->addStretch(); m_pageSend=m_stack->addWidget(scroll);
+    const QSize savedResolution(saved.value("sender/virtualWidth",1920).toInt(),saved.value("sender/virtualHeight",1080).toInt()); for(int i=0;i<m_vddResolutionCombo->count();++i)if(m_vddResolutionCombo->itemData(i).toSize()==savedResolution)m_vddResolutionCombo->setCurrentIndex(i);
+    onRefreshMonitors(); refreshEthernetInterfaces();
+    auto* timer=new QTimer(this); timer->setInterval(2000); connect(timer,&QTimer::timeout,this,[this]{ refreshEthernetInterfaces(); attemptAutomaticConnection(); }); timer->start();
 }
+
 #endif
 
 // ─── Receive Page ───────────────────────────────────────────────────────────────
@@ -848,7 +656,7 @@ void MainWindow::setupReceivePage() {
 
     // Status indicator
     m_recvStatusLabel = new QLabel("Listening on port 51820");
-    m_recvStatusLabel->setStyleSheet("font-size: 15px; font-weight: bold; color: #4da6ff;");
+    m_recvStatusLabel->setStyleSheet("font-size: 15px; font-weight: bold; color: #75e5ce;");
     listenLayout->addWidget(m_recvStatusLabel);
 
     m_recvIpLabel = new QLabel();
@@ -858,7 +666,7 @@ void MainWindow::setupReceivePage() {
 
     auto* instrLabel = new QLabel(
         "This device is ready to receive. On the sender device:\n"
-        "  1. Open BetterCast and go to Send Screen\n"
+        "  1. Open WireDesk and go to Send Screen\n"
         "  2. This device should appear automatically\n"
         "  3. Or enter this device's IP address manually");
     instrLabel->setStyleSheet("color: #888; font-size: 12px;");
@@ -891,10 +699,10 @@ void MainWindow::setupReceivePage() {
 
     m_connectBtn = new QPushButton("Connect");
     m_connectBtn->setStyleSheet(
-        "QPushButton { background-color: #0078D4; color: white; font-weight: bold; "
+        "QPushButton { background-color: #53c9ae; color: white; font-weight: bold; "
         "padding: 8px 20px; border-radius: 6px; border: none; }"
         "QPushButton:hover { background-color: #1a8ae8; }"
-        "QPushButton:disabled { background-color: #2a2a2a; color: #666; }");
+        "QPushButton:disabled { background-color: #132337; color: #666; }");
     connect(m_connectBtn, &QPushButton::clicked, this, &MainWindow::onConnectClicked);
     connRow->addWidget(m_connectBtn);
 
@@ -913,7 +721,7 @@ void MainWindow::setupReceivePage() {
         "QPushButton { background-color: #3ddc84; color: black; font-weight: bold; "
         "padding: 10px 20px; border-radius: 8px; font-size: 14px; border: none; }"
         "QPushButton:hover { background-color: #50e898; }"
-        "QPushButton:disabled { background-color: #2a2a2a; color: #666; }");
+        "QPushButton:disabled { background-color: #132337; color: #666; }");
     connect(m_adbBtn, &QPushButton::clicked, this, &MainWindow::onAdbConnectClicked);
     adbLayout->addWidget(m_adbBtn);
 
@@ -922,7 +730,7 @@ void MainWindow::setupReceivePage() {
         "1. Enable Developer Options (tap Build Number 7x in Settings > About)\n"
         "2. Enable USB Debugging in Developer Options\n"
         "3. Connect Android to this computer via USB\n"
-        "4. Open BetterCast on Android and tap \"Start Casting\"\n"
+        "4. Open WireDesk on Android and tap \"Start Casting\"\n"
         "5. Click the button above to connect");
     m_adbHelpLabel->setStyleSheet("color: #666; font-size: 11px;");
     m_adbHelpLabel->setWordWrap(true);
@@ -956,9 +764,9 @@ void MainWindow::setupSettingsPage() {
     auto* aboutLayout = new QVBoxLayout(aboutCard);
     aboutLayout->setSpacing(8);
 
-    m_versionLabel = new QLabel(QString("BetterCast v%1")
+    m_versionLabel = new QLabel(QString("WireDesk v%1")
         .arg(QApplication::applicationVersion()));
-    m_versionLabel->setStyleSheet("font-size: 14px; font-weight: bold; color: #e0e0e0;");
+    m_versionLabel->setStyleSheet("font-size: 14px; font-weight: bold; color: #e4edf7;");
     aboutLayout->addWidget(m_versionLabel);
 
     auto* descLabel = new QLabel(
@@ -1000,6 +808,12 @@ void MainWindow::setupSettingsPage() {
 
     layout->addWidget(connCard);
 
+    auto* updatesCard=makeCard("Обновления WireDesk"); auto* updates=new QVBoxLayout(updatesCard);
+    auto* autoUpdate=new QCheckBox("Проверять подписанные обновления автоматически"); autoUpdate->setChecked(QSettings().value("updates/automatic",true).toBool()); updates->addWidget(autoUpdate);
+    connect(autoUpdate,&QCheckBox::toggled,this,[this](bool enabled){ m_updater->setAutomatic(enabled); });
+    auto* updateButton=new QPushButton("Проверить обновления"); updates->addWidget(updateButton);
+    auto* updateStatus=new QLabel("HTTPS + Ed25519. Установка после подтверждения, вне активного сеанса."); updateStatus->setWordWrap(true); updates->addWidget(updateStatus);
+    connect(updateButton,&QPushButton::clicked,this,[this,updateStatus]{ m_updater->check(); updateStatus->setText(m_updater->status()); }); layout->addWidget(updatesCard);
     // Changelog card
     auto* changeCard = makeCard("What's New");
     auto* changeLayout = new QVBoxLayout(changeCard);
@@ -1010,7 +824,8 @@ void MainWindow::setupSettingsPage() {
         QStringList items;
     };
     QVector<ChangeEntry> changelog = {
-        {"v8", "2026-03-30", {
+        {"WireDesk 1.0.0", "2026-10-10", {"Windows → Mac по выделенному Ethernet", "Сопряжение одним кодом, автоматический сертификат и восстановление", "60/120 FPS, ограниченные очереди и подписанные OTA-пакеты"}},
+        {"BetterCast v8", "2026-03-30", {
             "Unified sender + receiver in a single app",
             "Apple Music-style sidebar with tinted selection",
             "Windows sender with sidebar UI",
@@ -1066,25 +881,25 @@ void MainWindow::setupLogsPage() {
 
     auto* reportBtn = new QPushButton("Report Issue");
     reportBtn->setStyleSheet(
-        "QPushButton { background-color: #333; color: #ccc; padding: 6px 14px; "
+        "QPushButton { background-color: #20354a; color: #ccc; padding: 6px 14px; "
         "border-radius: 6px; font-size: 12px; border: 1px solid #555; }"
-        "QPushButton:hover { background-color: #444; }");
+        "QPushButton:hover { background-color: #2b465f; }");
     connect(reportBtn, &QPushButton::clicked, this, &MainWindow::onReportIssue);
     titleRow->addWidget(reportBtn);
 
     auto* copyBtn = new QPushButton("Copy");
     copyBtn->setStyleSheet(
-        "QPushButton { background-color: #333; color: #ccc; padding: 6px 14px; "
+        "QPushButton { background-color: #20354a; color: #ccc; padding: 6px 14px; "
         "border-radius: 6px; font-size: 12px; border: 1px solid #555; }"
-        "QPushButton:hover { background-color: #444; }");
+        "QPushButton:hover { background-color: #2b465f; }");
     connect(copyBtn, &QPushButton::clicked, this, &MainWindow::onCopyLogs);
     titleRow->addWidget(copyBtn);
 
     auto* clearBtn = new QPushButton("Clear");
     clearBtn->setStyleSheet(
-        "QPushButton { background-color: #333; color: #ccc; padding: 6px 14px; "
+        "QPushButton { background-color: #20354a; color: #ccc; padding: 6px 14px; "
         "border-radius: 6px; font-size: 12px; border: 1px solid #555; }"
-        "QPushButton:hover { background-color: #444; }");
+        "QPushButton:hover { background-color: #2b465f; }");
     connect(clearBtn, &QPushButton::clicked, this, &MainWindow::onClearLogs);
     titleRow->addWidget(clearBtn);
 
@@ -1137,7 +952,7 @@ void MainWindow::onConnectClicked() {
     m_network->connectTo(m_hostEdit->text(), port);
     m_connectBtn->setEnabled(false);
     m_recvStatusLabel->setText("Connecting...");
-    m_recvStatusLabel->setStyleSheet("font-size: 15px; font-weight: bold; color: #4da6ff;");
+    m_recvStatusLabel->setStyleSheet("font-size: 15px; font-weight: bold; color: #75e5ce;");
     LogManager::instance().log("Connecting to " + m_hostEdit->text() + ":" + QString::number(port));
 }
 
@@ -1145,7 +960,7 @@ void MainWindow::onAdbConnectClicked() {
     m_adbBtn->setEnabled(false);
     m_adbBtn->setText("Setting up ADB...");
     m_recvStatusLabel->setText("Looking for Android device...");
-    m_recvStatusLabel->setStyleSheet("font-size: 15px; font-weight: bold; color: #4da6ff;");
+    m_recvStatusLabel->setStyleSheet("font-size: 15px; font-weight: bold; color: #75e5ce;");
     LogManager::instance().log("Starting ADB setup...");
 
     std::thread([this]() {
@@ -1165,6 +980,7 @@ void MainWindow::onAdbConnectClicked() {
 }
 
 void MainWindow::onConnectionEstablished() {
+    m_updater->setSessionActive(true);
     m_connectBtn->setEnabled(true);
     m_reconnectTimer->stop();
     LogManager::instance().log("Connection established — streaming video");
@@ -1202,6 +1018,7 @@ void MainWindow::onConnectionEstablished() {
 }
 
 void MainWindow::onConnectionLost() {
+    m_updater->setSessionActive(m_streamConnected);
     m_connectBtn->setEnabled(true);
 
     if (m_adbHelper->wasAdbConnection()) {
@@ -1278,6 +1095,14 @@ void MainWindow::onSendScreenClicked() {
         return;
     }
 
+    m_autoConnectAttempted = true;
+    if (m_autoDisplay && m_autoDisplay->isChecked() && m_monitorCombo->currentData().toMap().value("virtual").toBool()) {
+        const auto size = m_vddResolutionCombo->currentData().toSize();
+        const int hz = m_refreshRateCombo->currentData().toInt();
+        if (!m_sender->vdd() || !m_sender->vdd()->createVirtualDisplay(size.width(),size.height(),hz)) return;
+        onRefreshMonitors();
+        for (int i=0;i<m_monitorCombo->count();++i) if(m_monitorCombo->itemData(i).toMap().value("virtual").toBool()) { m_monitorCombo->setCurrentIndex(i); break; }
+    }
     // Apply selected monitor to sender controller
     if (m_monitorCombo && m_monitorCombo->currentIndex() >= 0) {
         QVariantMap monData = m_monitorCombo->currentData().toMap();
@@ -1322,7 +1147,7 @@ void MainWindow::onSendScreenClicked() {
     m_fpsSpinBox->setEnabled(false);
     m_bitrateSpinBox->setEnabled(false);
     m_senderStatusLabel->setText("Starting sender...");
-    m_senderStatusLabel->setStyleSheet("font-size: 12px; color: #4da6ff;");
+    m_senderStatusLabel->setStyleSheet("font-size: 12px; color: #75e5ce;");
 
     int fps = m_fpsSpinBox->value();
     int bitrate = m_bitrateSpinBox->value();
@@ -1340,7 +1165,7 @@ void MainWindow::onCreateVirtualDisplay() {
 
     m_createVddBtn->setEnabled(false);
     m_vddStatusLabel->setText("Creating virtual display...");
-    m_vddStatusLabel->setStyleSheet("font-size: 12px; color: #4da6ff;");
+    m_vddStatusLabel->setStyleSheet("font-size: 12px; color: #75e5ce;");
     LogManager::instance().log(QString("Creating virtual display %1x%2...").arg(w).arg(h));
 
     const int hz = m_refreshRateCombo->currentData().toInt();
@@ -1361,12 +1186,14 @@ void MainWindow::onCreateVirtualDisplay() {
 void MainWindow::onRemoveVirtualDisplay() {
     if (!m_sender || !m_sender->vdd()) return;
 
-    m_vddStatusLabel->setText("The installed VDD monitor is reused. Disable/remove it explicitly in Windows Display Settings or the VDD installer; BetterCast does not remove other applications' monitors.");
+    m_vddStatusLabel->setText("The installed VDD monitor is reused. Disable/remove it explicitly in Windows Display Settings or the VDD installer; WireDesk does not remove other applications' monitors.");
 }
 
 void MainWindow::onRefreshMonitors() {
     if (!m_monitorCombo || !m_sender || !m_sender->vdd()) return;
 
+    const auto currentDisplay = m_monitorCombo->currentData().toMap().value("displayName").toString();
+    m_sender->vdd()->refreshInstallStatus();
     m_monitorCombo->clear();
 
     auto monitors = m_sender->vdd()->enumerateMonitors();
@@ -1397,7 +1224,9 @@ void MainWindow::onRefreshMonitors() {
         m_monitorCombo->addItem(label, data);
     }
 
-    const auto selected = QSettings().value("sender/display").toString();
+    const auto selected = currentDisplay.isEmpty() ? QSettings().value("sender/display").toString() : currentDisplay;
+    if(selected.isEmpty())for(int i=0;i<m_monitorCombo->count();++i)if(m_monitorCombo->itemData(i).toMap().value("virtual").toBool()) { m_monitorCombo->setCurrentIndex(i); break; }
+    if(m_vddStatusLabel)m_vddStatusLabel->setText(m_sender->vdd()->isVddInstalled()?"VDD найден. Для отдельного экрана в Windows выберите «Расширить рабочий стол».":"Нужен установленный Virtual Display Driver. Приложение не устанавливает драйвер и не меняет Secure Boot самостоятельно.");
     for (int i = 0; i < m_monitorCombo->count(); ++i)
         if (m_monitorCombo->itemData(i).toMap().value("displayName").toString() == selected) m_monitorCombo->setCurrentIndex(i);
     LogManager::instance().log(QString("Found %1 monitor(s)").arg(monitors.size()));
@@ -1413,6 +1242,7 @@ void MainWindow::onMonitorSelected(int index) {
 }
 
 void MainWindow::onStopSendingClicked() {
+    m_autoConnectAttempted = true;
     m_sender->stopSending();
     m_sendBtn->setEnabled(true); m_stopSendBtn->setEnabled(false); m_sendHostEdit->setEnabled(true);
     m_dedicatedEthernet->setEnabled(true); m_ethernetCombo->setEnabled(true);
@@ -1546,7 +1376,7 @@ void MainWindow::onClearLogs() {
 }
 
 void MainWindow::onReportIssue() {
-    QString sysInfo = QString("Platform: %1, BetterCast %2")
+    QString sysInfo = QString("Platform: %1, WireDesk %2")
         .arg(
 #ifdef _WIN32
             "Windows"
@@ -1571,7 +1401,7 @@ void MainWindow::onReportIssue() {
         "<details><summary>Recent Logs</summary>\n\n```\n%2\n```\n\n</details>"
     ).arg(sysInfo, recentLogs.join("\n"));
 
-    QString url = QString("https://github.com/StephenLovino/BetterCast/issues/new?title=%1&body=%2")
+    QString url = QString("https://github.com/b0rdik/WireDesk/issues/new?title=%1&body=%2")
         .arg(QString("Bug: ").toUtf8().toPercentEncoding(),
              body.toUtf8().toPercentEncoding());
 
@@ -1618,5 +1448,78 @@ void MainWindow::applyEthernetMode(bool enabled) {
         m_discovery->startAdvertising(m_network->actualTcpPort()); m_discovery->startBrowsing();
         if (auto port = m_inviteListener->start()) m_discovery->advertiseSenderService(port);
     }
+}
+#endif
+
+void MainWindow::resizeEvent(QResizeEvent* event) {
+    QMainWindow::resizeEvent(event);
+    const bool compact=width()<860;
+    if(m_sidebarList) {
+        m_sidebarList->setFixedWidth(compact?64:180);
+        for(int i=0;i<m_sidebarList->count();++i) {
+            auto* item=m_sidebarList->item(i);
+            const auto label=item->data(Qt::UserRole+1).toString();
+            if(label.isEmpty()) item->setHidden(compact);
+            else { item->setText(compact?QString():label); item->setToolTip(label); }
+        }
+    }
+#ifdef ENABLE_SENDER
+    if(m_setupCards)m_setupCards->setDirection(width()<1120?QBoxLayout::TopToBottom:QBoxLayout::LeftToRight);
+    if(m_sendLayout)m_sendLayout->setContentsMargins(compact?16:28,24,compact?16:28,24);
+#endif
+}
+
+bool MainWindow::importPairingCode(const QString& code) {
+#ifdef ENABLE_SENDER
+    if(!m_sender || m_sender->isSending())return false;
+    PairingProfile profile;
+    if(!PairingProfile::parse(code,&profile)) { m_senderStatusLabel->setText("Неверный код WireDesk. Скопируйте полный код на Mac или откройте файл сопряжения."); return false; }
+    m_sendHostEdit->setText(profile.ip); m_certificatePinEdit->setText(profile.fingerprint); m_dedicatedEthernet->setChecked(true);
+    QSettings saved; saved.setValue("sender/host",profile.ip); saved.setValue("ethernet/pin",profile.fingerprint); saved.setValue("ethernet/enabled",true);
+    refreshEthernetInterfaces();
+    int match=-1,count=0; const QHostAddress remote(profile.ip);
+    for(int i=0;i<m_ethernetCombo->count();++i) {
+        const auto data=m_ethernetCombo->itemData(i).toMap();
+        const auto iface=QNetworkInterface::interfaceFromName(data.value("name").toString());
+        for(const auto& address:iface.addressEntries())if(address.ip().toString()==data.value("ip").toString()&&address.prefixLength()>0&&remote.isInSubnet(address.ip(),address.prefixLength())&&address.ip()!=remote) { match=i; ++count; break; }
+    }
+    m_ethernetCombo->setCurrentIndex(count==1?match:-1);
+    m_senderStatusLabel->setText(count==1?"Mac сохранён. Ethernet выбран; подтвердите подключение на Mac.":"Mac сохранён. Выберите подходящий Ethernet-адрес в одной подсети с Mac.");
+    m_autoConnectAttempted=false;
+    return true;
+#else
+    Q_UNUSED(code); return false;
+#endif
+}
+#ifdef ENABLE_SENDER
+void MainWindow::refreshEthernetInterfaces() {
+    if(!m_ethernetCombo || m_sender->isSending())return;
+    const auto current=m_ethernetCombo->currentData().toMap();
+    QSettings saved;
+    const QString wantedName=current.value("name",saved.value("ethernet/interface")).toString();
+    const QString wantedIP=current.value("ip",saved.value("ethernet/localIP")).toString();
+    QSignalBlocker block(m_ethernetCombo); m_ethernetCombo->clear();
+    int selected=-1;
+    for(const auto& iface:QNetworkInterface::allInterfaces()) {
+        if(iface.type()!=QNetworkInterface::Ethernet || !iface.flags().testFlag(QNetworkInterface::IsRunning))continue;
+        for(const auto& entry:iface.addressEntries()) {
+            if(entry.ip().protocol()!=QAbstractSocket::IPv4Protocol || entry.ip()==QHostAddress::AnyIPv4)continue;
+            QVariantMap data; data["name"]=iface.name(); data["ip"]=entry.ip().toString();
+            m_ethernetCombo->addItem(QString("%1 · %2").arg(iface.humanReadableName(),entry.ip().toString()),data);
+            if(iface.name()==wantedName&&entry.ip().toString()==wantedIP)selected=m_ethernetCombo->count()-1;
+        }
+    }
+    if(wantedName.isEmpty()&&m_ethernetCombo->count()==1)selected=0;
+    m_ethernetCombo->setCurrentIndex(selected);
+    m_ethernetCombo->setPlaceholderText(wantedName.isEmpty()?"Ожидание Ethernet IPv4…":"Выбранный Ethernet/IP недоступен");
+}
+void MainWindow::attemptAutomaticConnection() {
+    if(!m_autoConnect || !m_autoConnect->isChecked() || m_autoConnectAttempted || m_sender->isSending() || !m_dedicatedEthernet->isChecked())return;
+    if(m_sendHostEdit->text().isEmpty()||m_certificatePinEdit->text().size()!=64||m_ethernetCombo->currentIndex()<0||m_monitorCombo->currentIndex()<0)return;
+    if(!m_sender->vdd()||!m_sender->vdd()->isVddInstalled())return;
+    const auto monitor=m_monitorCombo->currentData().toMap();
+    if(!monitor.value("virtual").toBool())return; // never automatically stream a user's primary display
+    if(!m_sender->vdd()->verifyDisplayMode(monitor.value("displayName").toString(),0,0,m_fpsSpinBox->value())&& !m_autoDisplay->isChecked())return;
+    m_autoConnectAttempted=true; onSendScreenClicked();
 }
 #endif

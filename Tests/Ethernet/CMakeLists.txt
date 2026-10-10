@@ -19,3 +19,9 @@ add_executable(encoder-tests EncoderTests.cpp ${SENDER_DIR}/VideoEncoderFF.cpp $
 target_compile_definitions(encoder-tests PRIVATE BETTERCAST_ETHERNET_TEST=1)
 target_include_directories(encoder-tests PRIVATE ${SENDER_DIR} ${AVCODEC_INCLUDE})
 target_link_libraries(encoder-tests PRIVATE Qt6::Core ${AVCODEC_LIB} ${AVUTIL_LIB})
+
+add_executable(pairing-tests PairingTests.cpp)
+target_link_libraries(pairing-tests PRIVATE Qt6::Core Qt6::Network)
+enable_testing()
+add_test(NAME pairing COMMAND pairing-tests)
+add_test(NAME encoder COMMAND encoder-tests)

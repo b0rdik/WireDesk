@@ -5,11 +5,11 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleExecutable</key>
-	<string>BetterCastSender</string>
+	<string>WireDesk</string>
 	<key>CFBundleIconFile</key>
 	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.bettercast.sender</string>
+	<string>io.github.b0rdik.wiredesk</string>
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleLocalizations</key>
@@ -22,22 +22,36 @@
 		<string>fr</string>
 	</array>
 	<key>CFBundleName</key>
-	<string>BetterCast</string>
+	<string>WireDesk</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
-	<string>21.0</string>
+	<string>1.0.0</string>
 	<key>CFBundleVersion</key>
-	<string>21</string>
+	<string>1.0.0</string>
 	<key>LSMinimumSystemVersion</key>
 	<string>13.0</string>
 	<key>NSCameraUsageDescription</key>
-	<string>BetterCast uses this to show the screen of an iPhone or iPad connected by cable, and to read a Wi-Fi QR code shown on your phone so you do not have to type hotspot details. macOS treats a connected phone's screen as a camera, which is why this asks for camera access. Nothing is stored or sent anywhere.</string>
+	<string>WireDesk uses this to show the screen of an iPhone or iPad connected by cable, and to read a Wi-Fi QR code shown on your phone so you do not have to type hotspot details. macOS treats a connected phone's screen as a camera, which is why this asks for camera access. Nothing is stored or sent anywhere.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>BetterCast uses this to send your Mac's sound to a connected device, and to play the sound of an iPhone or iPad connected by cable. Nothing is recorded or sent anywhere else.</string>
+	<string>WireDesk uses this to send your Mac's sound to a connected device, and to play the sound of an iPhone or iPad connected by cable. Nothing is recorded or sent anywhere else.</string>
 	<key>NSScreenCaptureUsageDescription</key>
-	<string>BetterCast needs to capture your screen to stream it to the receiver.</string>
+	<string>WireDesk needs to capture your screen to stream it to the receiver.</string>
+	<key>CFBundleDisplayName</key>
+	<string>WireDesk</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/b0rdik/WireDesk/releases/latest/download/mac-appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>VEYSCJQc+66Sr3KML1c5zUnadF58jarTjNG0mzFRCC4=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUAutomaticallyUpdate</key>
+	<true/>
+	<key>SUEnableSystemProfiling</key>
+	<false/>
+	<key>SUVerifyUpdateBeforeExtraction</key>
+	<true/>
 </dict>
 </plist>

@@ -48,7 +48,7 @@ class ReceiverWindowController {
             backing: .buffered,
             defer: false
         )
-        w.title = tr("BetterCast — Receiving")
+        w.title = tr("WireDesk — Receiving")
         w.backgroundColor = .black
         w.isReleasedWhenClosed = false
         w.contentMinSize = NSSize(width: 320, height: 180)
@@ -146,9 +146,9 @@ class ReceiverWindowController {
     func updateTitle(senderCount: Int) {
         guard let w = window else { return }
         if senderCount > 0 {
-            w.title = senderCount == 1 ? tr("BetterCast — 1 sender") : tr("BetterCast — %lld senders", senderCount)
+            w.title = senderCount == 1 ? tr("WireDesk — 1 sender") : tr("WireDesk — %lld senders", senderCount)
         } else {
-            w.title = tr("BetterCast — Receiving")
+            w.title = tr("WireDesk — Receiving")
         }
     }
 }
@@ -423,7 +423,7 @@ struct ReceiverModeView: View {
     private var statusSubtitle: String {
         if isConnected { return tr("Video is playing in a separate window.") }
         if manager.isRunning { return tr("Listening for incoming connections...") }
-        return tr("Start listening to receive screen streams from other BetterCast senders.")
+        return tr("Start listening to receive screen streams from other WireDesk senders.")
     }
 
     private func refreshLocalIPs() {

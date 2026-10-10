@@ -53,6 +53,9 @@ final class DedicatedEthernetReceiver: ObservableObject, ReceiverVideoDecoderDel
     @Published var diagnostics = "no data"
     @Published var connected = false
     @Published var running = false
+    @Published var measuredReceiveFPS: Double = 0
+    @Published var measuredDecodeFPS: Double = 0
+    @Published var measuredPresentationFPS: Double = 0
     private let queue = DispatchQueue(label: "com.bettercast.dedicated-ethernet", qos: .userInteractive)
     private let pathMonitor: NWPathMonitor
     private let requiredInterfaceType: NWInterface.InterfaceType
@@ -104,7 +107,7 @@ final class DedicatedEthernetReceiver: ObservableObject, ReceiverVideoDecoderDel
     func start() {
         guard !running else { return }
         guard let selected = addresses.first(where: { $0.id == selectedAddress }) else { status = "Select Ethernet IPv4"; return }
-        var validPeer = selected.isSameSubnet(expectedPeer)
+        var validPeer = expectedPeer.isEmpty || selected.isSameSubnet(expectedPeer)
 #if BETTERCAST_ETHERNET_TEST
         if requiredInterfaceType == .loopback && selected.ip == "127.0.0.1" && expectedPeer == "127.0.0.1" { validPeer = true }
 #endif
@@ -192,7 +195,7 @@ final class DedicatedEthernetReceiver: ObservableObject, ReceiverVideoDecoderDel
     }
     private func accept(_ connection: NWConnection) {
         guard client == nil, case let .hostPort(host, _) = connection.endpoint,
-              String(describing: host) == peerIP else { connection.cancel(); return }
+              (String(describing: host) == peerIP || (peerIP.isEmpty && address?.isSameSubnet(String(describing: host)) == true)) else { connection.cancel(); return }
         client = connection; approved = false; generation += 1
         let session = generation
         lastTraffic = ProcessInfo.processInfo.systemUptime
@@ -248,7 +251,7 @@ final class DedicatedEthernetReceiver: ObservableObject, ReceiverVideoDecoderDel
                 DispatchQueue.main.async { [weak self] in
                     guard let self else { return }
                     let alert = NSAlert()
-                    alert.messageText = "Allow Windows \(self.expectedPeer) to send its screen?"
+                    alert.messageText = "Разрешить Windows \(connection.endpoint) передавать экран?"
                     alert.informativeText = "Only this Ethernet IP is permitted. Reverse input is disabled. Trust lasts until listening stops."
                     alert.addButton(withTitle: "Allow"); alert.addButton(withTitle: "Reject")
                     let allow = alert.runModal() == .alertFirstButtonReturn
@@ -277,6 +280,16 @@ final class DedicatedEthernetReceiver: ObservableObject, ReceiverVideoDecoderDel
     }
     private func finishPairing(_ connection: NWConnection, session: Int) {
         guard generation == session, client === connection else { return }
+        if peerIP.isEmpty, case let .hostPort(host, _) = connection.endpoint {
+            peerIP = String(describing: host)
+            let rememberedIP = peerIP
+            DispatchQueue.main.async { [weak self] in
+                self?.expectedPeer = rememberedIP
+#if !BETTERCAST_ETHERNET_TEST
+                UserDefaults.standard.set(rememberedIP, forKey: "ethernet.peer")
+#endif
+            }
+        }
         decoder.reset()
         approved = true; negotiatedSize = .zero; received = 0; decoded = 0; byteCount = 0; senderStats = [:]
         lastStats = ProcessInfo.processInfo.systemUptime
@@ -319,6 +332,9 @@ final class DedicatedEthernetReceiver: ObservableObject, ReceiverVideoDecoderDel
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             let renderFPS = self.renderer.takeSubmittedFPS(interval: interval)
+            self.measuredReceiveFPS = rxFPS
+            self.measuredDecodeFPS = decodeFPS
+            self.measuredPresentationFPS = renderFPS
             let screen = self.renderer.screenDescription
             let warnings = (fps == 120 && self.renderer.screenMaxFPS < 120) ? "\nCurrent screen cannot present 120 new frames/s" : ""
             self.diagnostics = "Selected/actual: \(selectedName) / \(iface)\n\(endpoint)\nH.264 \(fps) FPS target; \(Int(self.renderer.videoSize.width))×\(Int(self.renderer.videoSize.height))\nReceive \(String(format: "%.1f", rxFPS)), decode \(String(format: "%.1f", decodeFPS)), new-frame submissions \(String(format: "%.1f", renderFPS)) FPS\nMeasured receive \(String(format: "%.2f", bitrate)) Mbps; decoder \(decoderInfo)\nDecode \(String(format: "%.2f", decodeMS))ms; decode queue \(inFlight)/1; render queue \(self.renderer.pendingDepth)/1; render drops \(self.renderer.droppedFrames)\n\(screen)\nSender: \(sender)\nActual scanout FPS / end-to-end latency / CPU-GPU load: no data\(warnings)"

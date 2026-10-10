@@ -13,7 +13,8 @@ struct BetterCastSenderApp: App {
     @StateObject private var networkClient = NetworkClient()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("hasCompletedTour") private var hasCompletedTour = false
-    @AppStorage("ethernet.enabled") private var ethernetReceiverEnabled = false
+    @AppStorage("ethernet.enabled") private var ethernetReceiverEnabled = true
+    @State private var showAdvancedFeatures = false
 
     /// Whether the donation nudge is on screen right now.
     ///
@@ -24,14 +25,16 @@ struct BetterCastSenderApp: App {
     @State private var showDonatePrompt: Bool
 
     init() {
-        _showDonatePrompt = State(initialValue: DonatePromptState.shouldPresentOnLaunch())
+        UserDefaults.standard.register(defaults: ["ethernet.enabled": true, "wiredesk.autoListen": true])
+        _showDonatePrompt = State(initialValue: false)
     }
 
     var body: some Scene {
-        WindowGroup {
+        WindowGroup("WireDesk") {
             Group {
-                if hasCompletedOnboarding {
+                if showAdvancedFeatures {
                     mainView
+                        .toolbar { Button("Вернуться в WireDesk") { showAdvancedFeatures = false } }
                         .sheet(isPresented: $showDonatePrompt) {
                             DonatePromptView(
                                 onLater: { showDonatePrompt = false },
@@ -42,11 +45,13 @@ struct BetterCastSenderApp: App {
                             )
                         }
                 } else {
-                    OnboardingView(onComplete: {
-                        hasCompletedOnboarding = true
-                    })
-                    .frame(minWidth: 520, minHeight: 600)
-                    .background(Color(nsColor: .windowBackgroundColor))
+                    WireDeskDashboard { showAdvancedFeatures = true }
+                        .onAppear {
+                            networkClient.setDedicatedReceiver(true)
+                            UpdateChecker.shared.mayInstall = { [weak networkClient] in
+                                !ReceiverManager.shared.ethernet.connected && !(networkClient?.isConnected ?? false)
+                            }
+                        }
                 }
             }
             // Sits outside the onboarding branch: a device can dial this Mac before
@@ -67,6 +72,9 @@ struct BetterCastSenderApp: App {
                     onDeny: { networkClient.denyInvite() }
                 )
             }
+        }
+        .commands {
+            CommandGroup(after: .appInfo) { Button("Проверить обновления…") { UpdateChecker.shared.downloadAndOpen() } }
         }
     }
 
@@ -194,8 +202,8 @@ struct GuidedTourOverlay: View {
 
     private let steps: [TourStep] = [
         TourStep(
-            title: "Welcome to BetterCast",
-            description: "Let's take a quick tour of the app. BetterCast turns any device into a wireless extended display for your Mac.",
+            title: "Welcome to WireDesk",
+            description: "Let's take a quick tour of the app. WireDesk turns any device into a wireless extended display for your Mac.",
             icon: "hand.wave.fill",
             sidebarTarget: nil,
             anchorKey: nil
@@ -216,7 +224,7 @@ struct GuidedTourOverlay: View {
         ),
         TourStep(
             title: "Receive Screen",
-            description: "BetterCast can also receive streams from other Macs. Start listening here and incoming video opens in a separate window.",
+            description: "WireDesk can also receive streams from other Macs. Start listening here and incoming video opens in a separate window.",
             icon: "display.and.arrow.down",
             sidebarTarget: .receive,
             anchorKey: "sidebar_receive"
@@ -438,7 +446,7 @@ struct OnboardingView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 18))
                     .shadow(color: .black.opacity(0.15), radius: 8, y: 4)
 
-                Text("Welcome to BetterCast")
+                Text("Welcome to WireDesk")
                     .font(.system(size: 26, weight: .bold))
 
                 Text("A few permissions are needed to get started")
@@ -534,7 +542,7 @@ struct OnboardingView: View {
             icon: "record.circle",
             iconColor: .red,
             title: "Screen Recording",
-            description: "BetterCast needs Screen Recording permission to capture your display and stream it to receivers.",
+            description: "WireDesk needs Screen Recording permission to capture your display and stream it to receivers.",
             isGranted: screenRecordingGranted,
             actionTitle: "Open Screen Recording Settings",
             action: {
@@ -555,7 +563,7 @@ struct OnboardingView: View {
             icon: "hand.point.up.left",
             iconColor: .blue,
             title: "Accessibility",
-            description: "Accessibility permission lets BetterCast relay mouse and keyboard input from your receivers back to this Mac.",
+            description: "Accessibility permission lets WireDesk relay mouse and keyboard input from your receivers back to this Mac.",
             isGranted: accessibilityGranted,
             actionTitle: "Open Accessibility Settings",
             action: {
@@ -889,7 +897,7 @@ struct SidebarView: View {
                     .tourAnchor("sidebar_logs")
             }
         }
-        .navigationTitle("BetterCast")
+        .navigationTitle("WireDesk")
         .listStyle(.sidebar)
         .sheet(isPresented: Binding(
             get: { client.qrPairingPayload != nil },
@@ -907,13 +915,13 @@ struct SidebarView: View {
                         NSWorkspace.shared.open(url)
                     }
                 } label: {
-                    Text(tr("Support BetterCast"))
+                    Text(tr("Support WireDesk"))
                         .font(.caption)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .help(tr("BetterCast is free — chip in if it saved you buying a monitor"))
+                .help(tr("WireDesk is free — chip in if it saved you buying a monitor"))
 
                 HStack(spacing: 4) {
                     Button {
@@ -942,7 +950,7 @@ struct SidebarView: View {
                             .font(.system(size: 11))
                     }
                     .buttonStyle(.borderless)
-                    .help("Quit BetterCast")
+                    .help("Quit WireDesk")
                 }
             }
             .padding(.horizontal, 12)
@@ -1565,7 +1573,7 @@ struct DetailPanelView: View {
             // About & Changelog
             Section("About") {
                 LabeledContent("Version") {
-                    Text("BetterCast \(UpdateChecker.currentVersion)")
+                    Text("WireDesk \(UpdateChecker.currentVersion)")
                         .foregroundStyle(.secondary)
                 }
 
@@ -1671,7 +1679,7 @@ struct DetailPanelView: View {
                         Text("No Devices Found")
                             .font(.system(size: 24, weight: .bold))
 
-                        Text("To use BetterCast, you need the receiver app running on another device.")
+                        Text("To use WireDesk, you need the receiver app running on another device.")
                             .font(.body)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
@@ -1682,7 +1690,7 @@ struct DetailPanelView: View {
                         gettingStartedStep(
                             number: 1,
                             title: "Download the Receiver",
-                            subtitle: "Install BetterCast Receiver on your iPad, Android, Windows, Linux, or Mac."
+                            subtitle: "Install WireDesk Receiver on your iPad, Android, Windows, Linux, or Mac."
                         )
                         gettingStartedStep(
                             number: 2,
@@ -2538,7 +2546,7 @@ struct DiscoveredDeviceView: View {
                         VStack(alignment: .leading) {
                             Text("USB Cable")
                                 .fontWeight(.medium)
-                            Text("No network needed — open BetterCast on the device first")
+                            Text("No network needed — open WireDesk on the device first")
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
@@ -4372,7 +4380,7 @@ class NetworkClient: ObservableObject, VideoEncoderDelegate, AudioEncoderDelegat
     /// to install on the phone — the system scanner does the work.
     func startQRPairing() {
         guard !adbInProgress else { return }
-        let name = "BetterCast-\(String(format: "%04d", Int.random(in: 0...9999)))"
+        let name = "WireDesk-\(String(format: "%04d", Int.random(in: 0...9999)))"
         let code = String(format: "%06d", Int.random(in: 0...999999))
         qrPairingCode = code
         qrPairingPayload = "WIFI:T:ADB;S:\(name);P:\(code);;"
@@ -5819,7 +5827,7 @@ class NetworkClient: ObservableObject, VideoEncoderDelegate, AudioEncoderDelegat
                     height: rh,
                     ppi: isRetina ? min(220, selectedResolution.ppi * 2) : selectedResolution.ppi,
                     hiDPI: isRetina,
-                    name: "BetterCast Display (\(serviceName))"
+                    name: "WireDesk Display (\(serviceName))"
                 )
             } else {
                 // The picker value is the LOOKS-LIKE size the user expects to see.
@@ -5835,7 +5843,7 @@ class NetworkClient: ObservableObject, VideoEncoderDelegate, AudioEncoderDelegat
                     height: selectedResolution.height * scale,
                     ppi: selectedResolution.ppi * scale,
                     hiDPI: isRetina,
-                    name: "BetterCast Display (\(serviceName))"
+                    name: "WireDesk Display (\(serviceName))"
                 )
             }
 

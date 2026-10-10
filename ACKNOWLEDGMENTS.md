@@ -1,5 +1,8 @@
 # Acknowledgments
 
+WireDesk is derived from [BetterCast by Stephen Lovino](https://github.com/StephenLovino/BetterCast), licensed under GPL-3.0. Original copyright, notices and Git history are retained. The following original acknowledgments remain applicable.
+
+
 BetterCast is original code, but several design decisions were informed by
 studying other open-source projects. No source code from these projects is
 included in BetterCast. The debt is one of ideas, and it deserves credit.
@@ -27,3 +30,8 @@ included in BetterCast. The debt is one of ideas, and it deserves credit.
 - Qt Network TLS uses the Qt license/backend already supplied with the desktop build; preserve Qt notices and applicable source/relinking obligations.
 - FFmpeg/libswscale and optional NVENC/AMF/QSV features remain external dependencies. Windows build enables these explicitly. libx264 is a GPL dependency; do not use nonfree/GPL-incompatible FFmpeg configurations for distribution.
 - Network, Security, CryptoKit, CoreVideo and QuartzCore are system frameworks on macOS. No custom cryptographic construction is used.
+
+## Signed updates
+
+- [Sparkle 2.10.0](https://github.com/sparkle-project/Sparkle) — MIT; notice included in the Mac application.
+- [WinSparkle 0.9.4](https://github.com/vslavik/winsparkle) — MIT/Expat; notices in `licenses/` and Windows packages. Both use standard Ed25519 archive signatures.

@@ -4,7 +4,6 @@
 # Swift Package Manager
 /.build
 /Packages
-/Package.resolved
 .swiftpm/
 
 # Xcode
@@ -59,4 +58,6 @@ Sources/BetterCastReceiverAndroid/local.properties.bak
 work/
 *.p12
 receiver.password
+*.key
+*.pem
 __pycache__/

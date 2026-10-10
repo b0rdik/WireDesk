@@ -95,6 +95,9 @@ class AudioDecoder;
 class AudioPlayer;
 class AdbHelper;
 class VideoWindow;
+class WireDeskUpdater;
+class QBoxLayout;
+class QVBoxLayout;
 #ifdef ENABLE_SENDER
 class SenderController;
 class VirtualDisplayVDD;
@@ -107,6 +110,9 @@ class MainWindow : public QMainWindow {
 public:
     explicit MainWindow(QWidget* parent = nullptr);
     ~MainWindow();
+    bool importPairingCode(const QString& code);
+protected:
+    void resizeEvent(QResizeEvent* event) override;
 
 private slots:
     void onSidebarSelectionChanged(int row);
@@ -196,10 +202,19 @@ private:
 
     // Video window (separate from main window, like Mac app)
     VideoWindow* m_videoWindow = nullptr;
+    WireDeskUpdater* m_updater = nullptr;
+    bool m_streamConnected = false;
 
 #ifdef ENABLE_SENDER
     // Send page
     QCheckBox* m_dedicatedEthernet = nullptr;
+    QBoxLayout* m_setupCards = nullptr;
+    QVBoxLayout* m_sendLayout = nullptr;
+    QCheckBox* m_autoConnect = nullptr;
+    QCheckBox* m_autoDisplay = nullptr;
+    bool m_autoConnectAttempted = false;
+    void refreshEthernetInterfaces();
+    void attemptAutomaticConnection();
     QComboBox* m_ethernetCombo = nullptr;
     QLineEdit* m_certificatePinEdit = nullptr;
     QComboBox* m_refreshRateCombo = nullptr;

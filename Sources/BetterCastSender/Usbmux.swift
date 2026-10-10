@@ -37,7 +37,7 @@ enum Usbmux {
                 // 3 is what usbmuxd returns when the device is there but nothing is
                 // listening on the port, which for us means the app is not open.
                 return code == 3
-                    ? "the device refused the connection — is BetterCast open on it?"
+                    ? "the device refused the connection — is WireDesk open on it?"
                     : "usbmuxd refused the connection (code \(code))"
             }
         }
@@ -111,8 +111,8 @@ enum Usbmux {
     /// Send one plist request and read the single plist reply.
     private static func exchange(_ fd: Int32, _ body: [String: Any], tag: UInt32) throws -> [String: Any] {
         var payload = body
-        payload["ClientVersionString"] = "BetterCast"
-        payload["ProgName"] = "BetterCast"
+        payload["ClientVersionString"] = "WireDesk"
+        payload["ProgName"] = "WireDesk"
         payload["kLibUSBMuxVersion"] = 3
 
         let plist = try PropertyListSerialization.data(fromPropertyList: payload, format: .xml, options: 0)

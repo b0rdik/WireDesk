@@ -120,6 +120,7 @@ set(SOURCES
     AudioDecoder.cpp
     AudioPlayer.cpp
     AdbHelper.cpp
+    WireDeskUpdater.cpp
 )
 
 set(HEADERS
@@ -134,6 +135,7 @@ set(HEADERS
     AudioDecoder.h
     AudioPlayer.h
     AdbHelper.h
+    WireDeskUpdater.h
 )
 
 # Sender mode sources
@@ -185,6 +187,7 @@ if(WIN32)
 endif()
 
 add_executable(BetterCastReceiver ${SOURCES} ${HEADERS} ${RESOURCES})
+set_target_properties(BetterCastReceiver PROPERTIES OUTPUT_NAME WireDesk)
 
 target_include_directories(BetterCastReceiver PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/generated"
