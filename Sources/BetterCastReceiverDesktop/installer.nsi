@@ -53,6 +53,14 @@ Function .onInit
   Sleep 1500
  ${EndIf}
 FunctionEnd
+Function un.onInit
+ SetRegView 64
+ FindWindow $0 "" "WireDesk"
+ ${If} $0 != 0
+  SendMessage $0 16 0 0
+  Sleep 1500
+ ${EndIf}
+FunctionEnd
 Section "WireDesk"
  SetOutPath "$INSTDIR"
  File /r "artifact\*.*"
