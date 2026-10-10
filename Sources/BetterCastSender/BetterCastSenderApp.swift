@@ -49,7 +49,9 @@ struct BetterCastSenderApp: App {
                         .onAppear {
                             networkClient.setDedicatedReceiver(true)
                             UpdateChecker.shared.mayInstall = { [weak networkClient] in
-                                !ReceiverManager.shared.ethernet.connected && !(networkClient?.isConnected ?? false)
+                                !ReceiverManager.shared.ethernet.connected
+                                    && ReceiverManager.shared.networkListener.connectedClients.isEmpty
+                                    && !(networkClient?.isConnected ?? false)
                             }
                         }
                 }
@@ -916,13 +918,13 @@ struct SidebarView: View {
                         NSWorkspace.shared.open(url)
                     }
                 } label: {
-                    Text(tr("Support WireDesk"))
+                    Text("Support BetterCast’s original author")
                         .font(.caption)
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
                 .controlSize(.small)
-                .help(tr("WireDesk is free — chip in if it saved you buying a monitor"))
+                .help(tr("Support Stephen Lovino, the original author of BetterCast"))
 
                 HStack(spacing: 4) {
                     Button {
@@ -1691,7 +1693,7 @@ struct DetailPanelView: View {
                         gettingStartedStep(
                             number: 1,
                             title: "Download the Receiver",
-                            subtitle: "Install WireDesk Receiver on your iPad, Android, Windows, Linux, or Mac."
+                            subtitle: "Use WireDesk on Windows/Mac, or the legacy BetterCast receivers on iPad/Android/Linux."
                         )
                         gettingStartedStep(
                             number: 2,

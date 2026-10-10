@@ -39,6 +39,7 @@
 #include <QToolButton>
 #include <QResizeEvent>
 #include <QStyle>
+#include <QPainter>
 #include <QUrlQuery>
 #include <QSignalBlocker>
 #include "PairingProfile.h"
@@ -197,9 +198,20 @@ static QListWidgetItem* addSidebarSection(QListWidget* list, const QString& titl
 static QListWidgetItem* addSidebarItem(QListWidget* list, const QString& icon,
                                         const QString& title, int pageIndex) {
     Q_UNUSED(icon);
-    auto* item = new QListWidgetItem(title);
-    const auto symbol=title=="Второй экран" ? QStyle::SP_ArrowForward : title=="Приём экрана" ? QStyle::SP_ArrowBack : title=="Настройки" ? QStyle::SP_FileDialogDetailedView : title=="Диагностика" ? QStyle::SP_FileDialogInfoView : QStyle::SP_ComputerIcon;
-    item->setIcon(QApplication::style()->standardIcon(symbol));
+    QPixmap pixels(88,88); pixels.fill(Qt::transparent); pixels.setDevicePixelRatio(4);
+    QPainter painter(&pixels); painter.setRenderHint(QPainter::Antialiasing);
+    QPen pen(QColor("#78dfc6"),1.7); pen.setCapStyle(Qt::RoundCap); pen.setJoinStyle(Qt::RoundJoin); painter.setPen(pen);
+    if(title=="Второй экран" || title=="Приём экрана") {
+        const bool sending=title=="Второй экран"; const int tip=sending?18:4, tail=sending?4:18, elbow=sending?12:10;
+        painter.drawLine(tail,11,tip,11); painter.drawLine(elbow,5,tip,11); painter.drawLine(tip,11,elbow,17);
+    } else if(title=="Настройки") {
+        painter.setBrush(QColor("#0d1825"));
+        for(int i=0;i<3;++i) { const int y=5+6*i, x=i==0?7:i==1?15:10; painter.drawLine(3,y,19,y); painter.drawEllipse(QPointF(x,y),2,2); }
+    } else if(title=="Диагностика") {
+        for(int y: {6,11,16}) { painter.drawPoint(3,y); painter.drawLine(8,y,19,y); }
+    } else { painter.drawRoundedRect(QRectF(3,4,16,11),2,2); painter.drawLine(11,15,11,19); painter.drawLine(7,19,15,19); }
+    painter.end();
+    auto* item = new QListWidgetItem(QIcon(pixels),title);
     item->setData(Qt::UserRole+1,title);
     item->setData(Qt::UserRole, pageIndex);
     item->setSizeHint(QSize(0, 34));
@@ -283,7 +295,7 @@ MainWindow::MainWindow(QWidget* parent)
         if (m_dedicatedEthernet) m_dedicatedEthernet->setEnabled(true);
         if (m_ethernetCombo) m_ethernetCombo->setEnabled(true);
         if (m_certificatePinEdit) m_certificatePinEdit->setEnabled(true);
-        if (m_fpsSpinBox) m_fpsSpinBox->setEnabled(true);
+        if (m_fpsCombo) m_fpsCombo->setEnabled(true);
         if (m_bitrateSpinBox) m_bitrateSpinBox->setEnabled(true);
         if (m_monitorCombo) m_monitorCombo->setEnabled(true);
     });
@@ -408,7 +420,7 @@ void MainWindow::setupUi() {
 
     // Sidebar
     m_sidebarList = new QListWidget();
-    m_sidebarList->setFixedWidth(180);
+    m_sidebarList->setFixedWidth(200);
     m_sidebarList->setIconSize(QSize(22,22));
     m_sidebarList->setFocusPolicy(Qt::NoFocus);
     m_sidebarList->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -568,7 +580,7 @@ void MainWindow::setupSendPage() {
     auto* layout = new QVBoxLayout(page); m_sendLayout = layout;
     layout->setContentsMargins(28, 28, 28, 28); layout->setSpacing(20);
     auto* header = new QHBoxLayout();
-    auto* icon = new QLabel(); icon->setPixmap(QPixmap(":/appicon.png").scaled(48,48,Qt::KeepAspectRatio,Qt::SmoothTransformation)); header->addWidget(icon);
+    auto* icon = new QLabel(); const auto scale=page->devicePixelRatioF(); auto brandPixels=QPixmap(":/appicon.png").scaled(qRound(48*scale),qRound(48*scale),Qt::KeepAspectRatio,Qt::SmoothTransformation); brandPixels.setDevicePixelRatio(scale); icon->setPixmap(brandPixels); header->addWidget(icon);
     auto* brand = new QLabel("WireDesk"); brand->setStyleSheet("font-size: 24px; font-weight: 700; color: #eaf4ff;"); header->addWidget(brand); header->addStretch();
     auto* tag = new QLabel("WINDOWS → MAC"); tag->setStyleSheet("color: #73eaca; font-size: 11px; letter-spacing: 1px;"); header->addWidget(tag); layout->addLayout(header);
     auto* hero = new QFrame(); hero->setObjectName("wireHero");
@@ -605,10 +617,11 @@ void MainWindow::setupSendPage() {
     m_vddResolutionCombo=new QComboBox();
     for(const auto& size: {QSize(1920,1080),QSize(2560,1440),QSize(3840,2160),QSize(1920,1200),QSize(2560,1600),QSize(1280,720),QSize(1024,768)}) m_vddResolutionCombo->addItem(QString("%1 × %2").arg(size.width()).arg(size.height()),size);
     quality->addRow("Разрешение",m_vddResolutionCombo);
-    m_fpsSpinBox=new QSpinBox(); m_fpsSpinBox->setObjectName("streamFPS"); m_fpsSpinBox->setRange(60,120); m_fpsSpinBox->setSingleStep(60); m_fpsSpinBox->setSuffix(" FPS"); m_fpsSpinBox->setValue(saved.value("sender/fps",60).toInt()==120?120:60); quality->addRow("Видеопоток",m_fpsSpinBox);
+    m_fpsCombo=new QComboBox(); m_fpsCombo->setObjectName("streamFPS"); m_fpsCombo->addItem("60 FPS · совместимость",60); m_fpsCombo->addItem("120 FPS · аппаратный кодер",120); m_fpsCombo->setCurrentIndex(saved.value("sender/fps",60).toInt()==120?1:0); quality->addRow("Видеопоток",m_fpsCombo);
     m_refreshRateCombo=new QComboBox(); m_refreshRateCombo->addItem("60 Гц",60); m_refreshRateCombo->addItem("120 Гц",120); m_refreshRateCombo->setCurrentIndex(saved.value("sender/virtualHz",60).toInt()==120?1:0); quality->addRow("Виртуальный монитор",m_refreshRateCombo);
+    connect(m_fpsCombo,QOverload<int>::of(&QComboBox::currentIndexChanged),this,[this](int index){ m_refreshRateCombo->setCurrentIndex(index); });
     m_bitrateSpinBox=new QSpinBox(); m_bitrateSpinBox->setRange(2,100); m_bitrateSpinBox->setSuffix(" Mbps"); m_bitrateSpinBox->setValue(saved.value("sender/bitrate",20).toInt()); quality->addRow("Качество / битрейт",m_bitrateSpinBox); display->addLayout(quality);
-    m_autoDisplay=new QCheckBox("Применять режим к одному установленному VDD автоматически"); m_autoDisplay->setChecked(saved.value("sender/autoDisplay",true).toBool()); display->addWidget(m_autoDisplay);
+    m_autoDisplay=new QCheckBox("Применять режим VDD автоматически"); m_autoDisplay->setChecked(saved.value("sender/autoDisplay",true).toBool()); display->addWidget(m_autoDisplay);
     m_createVddBtn=new QPushButton("Применить режим VDD"); connect(m_createVddBtn,&QPushButton::clicked,this,&MainWindow::onCreateVirtualDisplay); display->addWidget(m_createVddBtn);
     m_removeVddBtn=new QPushButton("Установка и отключение монитора"); connect(m_removeVddBtn,&QPushButton::clicked,this,[]{ QDesktopServices::openUrl(QUrl("https://github.com/b0rdik/WireDesk/blob/main/docs/ethernet-second-display.md#виртуальный-второй-монитор")); }); display->addWidget(m_removeVddBtn);
     layout->addWidget(displayCard);
@@ -628,6 +641,8 @@ void MainWindow::setupSendPage() {
     details->setVisible(false); connect(detailsButton,&QToolButton::toggled,this,[details,detailsButton](bool open){ details->setVisible(open); detailsButton->setArrowType(open?Qt::DownArrow:Qt::RightArrow); }); layout->addWidget(details);
     layout->addStretch(); m_pageSend=m_stack->addWidget(scroll);
     const QSize savedResolution(saved.value("sender/virtualWidth",1920).toInt(),saved.value("sender/virtualHeight",1080).toInt()); for(int i=0;i<m_vddResolutionCombo->count();++i)if(m_vddResolutionCombo->itemData(i).toSize()==savedResolution)m_vddResolutionCombo->setCurrentIndex(i);
+    connect(qApp,&QGuiApplication::screenAdded,this,[this](QScreen*){ if(!m_sender->isSending())onRefreshMonitors(); });
+    connect(qApp,&QGuiApplication::screenRemoved,this,[this](QScreen*){ if(!m_sender->isSending())onRefreshMonitors(); });
     onRefreshMonitors(); refreshEthernetInterfaces();
     auto* timer=new QTimer(this); timer->setInterval(2000); connect(timer,&QTimer::timeout,this,[this]{ refreshEthernetInterfaces(); attemptAutomaticConnection(); }); timer->start();
 }
@@ -731,7 +746,7 @@ void MainWindow::setupReceivePage() {
         "1. Enable Developer Options (tap Build Number 7x in Settings > About)\n"
         "2. Enable USB Debugging in Developer Options\n"
         "3. Connect Android to this computer via USB\n"
-        "4. Open WireDesk on Android and tap \"Start Casting\"\n"
+        "4. Open BetterCast Receiver on Android and tap \"Start Casting\"\n"
         "5. Click the button above to connect");
     m_adbHelpLabel->setStyleSheet("color: #666; font-size: 11px;");
     m_adbHelpLabel->setWordWrap(true);
@@ -1117,7 +1132,7 @@ void MainWindow::onSendScreenClicked() {
                                        .arg(adapterIdx).arg(outputIdx));
     }
 
-    const int requestedFPS = m_fpsSpinBox->value();
+    const int requestedFPS = m_fpsCombo->currentData().toInt();
     if (requestedFPS != 60 && requestedFPS != 120) {
         m_senderStatusLabel->setText("Choose 60 or 120 FPS"); return;
     }
@@ -1145,12 +1160,12 @@ void MainWindow::onSendScreenClicked() {
     m_sendBtn->setEnabled(false);
     m_stopSendBtn->setEnabled(true);
     m_sendHostEdit->setEnabled(false);
-    m_fpsSpinBox->setEnabled(false);
+    m_fpsCombo->setEnabled(false);
     m_bitrateSpinBox->setEnabled(false);
     m_senderStatusLabel->setText("Starting sender...");
     m_senderStatusLabel->setStyleSheet("font-size: 12px; color: #75e5ce;");
 
-    int fps = m_fpsSpinBox->value();
+    int fps = m_fpsCombo->currentData().toInt();
     int bitrate = m_bitrateSpinBox->value();
     LogManager::instance().log(QString("Starting sender to %1 at %2 FPS, %3 Mbps")
                                    .arg(host).arg(fps).arg(bitrate));
@@ -1252,7 +1267,7 @@ void MainWindow::onStopSendingClicked() {
     m_certificatePinEdit->setEnabled(true); m_monitorCombo->setEnabled(true);
     m_senderStatusLabel->setText("Sender stopped");
     m_senderStatusLabel->setStyleSheet("font-size: 12px; color: #888;");
-    m_fpsSpinBox->setEnabled(true);
+    m_fpsCombo->setEnabled(true);
     m_bitrateSpinBox->setEnabled(true);
     LogManager::instance().log("Sender stopped");
 }
@@ -1458,7 +1473,8 @@ void MainWindow::resizeEvent(QResizeEvent* event) {
     QMainWindow::resizeEvent(event);
     const bool compact=width()<860;
     if(m_sidebarList) {
-        m_sidebarList->setFixedWidth(compact?64:180);
+        m_sidebarList->setFixedWidth(compact?64:200);
+        if(m_splitter)m_splitter->setSizes({compact?64:200,qMax(1,width()-(compact?64:200))});
         for(int i=0;i<m_sidebarList->count();++i) {
             auto* item=m_sidebarList->item(i);
             const auto label=item->data(Qt::UserRole+1).toString();
@@ -1522,7 +1538,7 @@ void MainWindow::attemptAutomaticConnection() {
     if(!m_sender->vdd()||!m_sender->vdd()->isVddInstalled())return;
     const auto monitor=m_monitorCombo->currentData().toMap();
     if(!monitor.value("virtual").toBool())return; // never automatically stream a user's primary display
-    if(!m_sender->vdd()->verifyDisplayMode(monitor.value("displayName").toString(),0,0,m_fpsSpinBox->value())&& !m_autoDisplay->isChecked())return;
+    if(!m_sender->vdd()->verifyDisplayMode(monitor.value("displayName").toString(),0,0,m_fpsCombo->currentData().toInt())&& !m_autoDisplay->isChecked())return;
     m_autoConnectAttempted=true; onSendScreenClicked();
 }
 #endif

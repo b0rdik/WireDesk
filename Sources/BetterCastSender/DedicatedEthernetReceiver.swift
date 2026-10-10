@@ -4,6 +4,7 @@ import Security
 import AppKit
 import CryptoKit
 import CoreMedia
+import SystemConfiguration
 
 struct EthernetAddress: Identifiable, Hashable {
     var id: String { "\(name)|\(ip)" }
@@ -11,7 +12,15 @@ struct EthernetAddress: Identifiable, Hashable {
     let ip: String
     let mask: UInt32
 
-    static func available() -> [EthernetAddress] {
+    static func available(interfaceType: NWInterface.InterfaceType = .wiredEthernet) -> [EthernetAddress] {
+        // Default-route NWPathMonitor is unsatisfied on a direct, gateway-free cable.
+        // Classify the actual OS interfaces rather than mistaking internet reachability for Ethernet availability.
+        let systemInterfaces = SCNetworkInterfaceCopyAll() as? [SCNetworkInterface] ?? []
+        let wiredNames = Set(systemInterfaces.compactMap { interface -> String? in
+            guard SCNetworkInterfaceGetInterfaceType(interface) == kSCNetworkInterfaceTypeEthernet,
+                  let name = SCNetworkInterfaceGetBSDName(interface) else { return nil }
+            return name as String
+        })
         var head: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&head) == 0, let first = head else { return [] }
         defer { freeifaddrs(head) }
@@ -23,6 +32,12 @@ struct EthernetAddress: Identifiable, Hashable {
             guard let addr = entry.ifa_addr, addr.pointee.sa_family == UInt8(AF_INET),
                   let netmask = entry.ifa_netmask else { continue }
             let name = String(cString: entry.ifa_name)
+            guard entry.ifa_flags & UInt32(IFF_UP) != 0, entry.ifa_flags & UInt32(IFF_RUNNING) != 0 else { continue }
+            var allowed = interfaceType == .wiredEthernet && wiredNames.contains(name)
+#if BETTERCAST_ETHERNET_TEST
+            if interfaceType == .loopback { allowed = entry.ifa_flags & UInt32(IFF_LOOPBACK) != 0 }
+#endif
+            guard allowed else { continue }
             let ipv4 = UnsafeRawPointer(addr).assumingMemoryBound(to: sockaddr_in.self).pointee
             let mask = UnsafeRawPointer(netmask).assumingMemoryBound(to: sockaddr_in.self).pointee.sin_addr.s_addr.bigEndian
             var address = ipv4.sin_addr
@@ -59,7 +74,7 @@ final class DedicatedEthernetReceiver: ObservableObject, ReceiverVideoDecoderDel
     private let queue = DispatchQueue(label: "com.bettercast.dedicated-ethernet", qos: .userInteractive)
     private let pathMonitor: NWPathMonitor
     private let requiredInterfaceType: NWInterface.InterfaceType
-    private var interfaces: [NWInterface] = []
+    private var interfacePoll: DispatchSourceTimer?
     private var address: EthernetAddress?
     private var listener: NWListener?
     private var client: NWConnection?
@@ -94,19 +109,26 @@ final class DedicatedEthernetReceiver: ObservableObject, ReceiverVideoDecoderDel
         self.requiredInterfaceType = interfaceType
         self.pathMonitor = NWPathMonitor(requiredInterfaceType: interfaceType)
         self.decoder = decoder; self.renderer = renderer
-        pathMonitor.pathUpdateHandler = { [weak self] path in
-            guard let self else { return }
-            self.interfaces = path.availableInterfaces.filter { $0.type == self.requiredInterfaceType }
-            let names = Set(self.interfaces.map { $0.name })
-            DispatchQueue.main.async { self.addresses = EthernetAddress.available().filter { names.contains($0.name) } }
-        }
+        pathMonitor.pathUpdateHandler = { [weak self] _ in self?.refreshAddresses() }
         pathMonitor.start(queue: queue)
+        let poll = DispatchSource.makeTimerSource(queue: queue)
+        poll.schedule(deadline: .now(), repeating: 2)
+        poll.setEventHandler { [weak self] in self?.refreshAddresses() }
+        interfacePoll = poll; poll.resume()
     }
-    deinit { pathMonitor.cancel() }
+    private func refreshAddresses() {
+        let available = EthernetAddress.available(interfaceType: requiredInterfaceType)
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.addresses != available else { return }
+            self.addresses = available
+        }
+    }
+    deinit { pathMonitor.cancel(); interfacePoll?.cancel() }
 
     func start() {
         guard !running else { return }
         guard let selected = addresses.first(where: { $0.id == selectedAddress }) else { status = "Select Ethernet IPv4"; return }
+        guard addresses.filter({ $0.ip == selected.ip }).count == 1 else { status = "IPv4 is assigned to multiple interfaces; choose a unique dedicated address"; return }
         var validPeer = expectedPeer.isEmpty || selected.isSameSubnet(expectedPeer)
 #if BETTERCAST_ETHERNET_TEST
         if requiredInterfaceType == .loopback && selected.ip == "127.0.0.1" && expectedPeer == "127.0.0.1" { validPeer = true }
@@ -156,7 +178,7 @@ final class DedicatedEthernetReceiver: ObservableObject, ReceiverVideoDecoderDel
     private var peerIP = ""
     private func publish(_ text: String) { DispatchQueue.main.async { [weak self] in self?.status = text } }
     private func makeListener() {
-        guard let address, let iface = interfaces.first(where: { $0.name == address.name }), let identity else {
+        guard let address, EthernetAddress.available(interfaceType: requiredInterfaceType).contains(address), let identity else {
             publish("Selected Ethernet unavailable; waiting without fallback"); scheduleListenerRetry(); return
         }
         let tls = NWProtocolTLS.Options()
@@ -166,7 +188,9 @@ final class DedicatedEthernetReceiver: ObservableObject, ReceiverVideoDecoderDel
         tcp.noDelay = true; tcp.enableKeepalive = true
         tcp.keepaliveIdle = 2; tcp.keepaliveInterval = 1; tcp.keepaliveCount = 3
         let parameters = NWParameters(tls: tls, tcp: tcp)
-        parameters.requiredInterface = iface
+        // Exact local IPv4 plus required wired type binds the selected unique NIC without a default gateway.
+        // Each accepted connection must additionally prove the selected BSD interface and local endpoint.
+        parameters.requiredInterfaceType = requiredInterfaceType
         parameters.requiredLocalEndpoint = .hostPort(host: .init(address.ip), port: .init(rawValue: EthernetProtocol.port)!)
         parameters.includePeerToPeer = false
         parameters.prohibitExpensivePaths = true

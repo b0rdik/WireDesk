@@ -1,4 +1,4 @@
-# WireDesk validation — 2026-10-10
+# WireDesk validation — 2026-10-11
 
 This report covers the rename/setup/update changes. The earlier pipeline measurements remain in [ethernet-results.md](ethernet-results.md).
 
@@ -6,6 +6,7 @@ This report covers the rename/setup/update changes. The earlier pipeline measure
 |---|---|
 | Local universal Swift release (arm64/x86_64) and deep bundle signature validation | PASS on Xcode 27; Intel execution not tested |
 | Native Mac launch and visual review | PASS; dark adaptive dashboard, status/cards/controls |
+| Direct gateway-free Ethernet | PASS: USB Ethernet2.5Gb/s with IPv4link-local was found independently of default-route reachability; a TLS listener bound to that IPv4 without a gateway |
 | Automatic identity creation | PASS: standard RSA3072 PKCS#12, directory700/files600; no private material in pairing |
 | Qt sender/UI/updater shared code on Mac | PASS; Windows-specific code is checked separately by Actions |
 | Pairing parser invalid URL/version/port/IP/hash/duplicate/extra fields | PASS |

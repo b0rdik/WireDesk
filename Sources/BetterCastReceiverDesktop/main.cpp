@@ -75,8 +75,8 @@ int main(int argc, char* argv[]) {
             }
         };
         QObject::connect(socket,&QLocalSocket::readyRead,&window,readPairing);
-        if(socket->bytesAvailable())readPairing();
         QObject::connect(socket,&QLocalSocket::disconnected,socket,[socket,data]{ delete data; socket->deleteLater(); });
+        if(socket->bytesAvailable())readPairing();
     });
 
     return app.exec();

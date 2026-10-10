@@ -40,7 +40,9 @@ final class UpdateChecker: NSObject, ObservableObject, SPUUpdaterDelegate {
             controller?.updater.automaticallyChecksForUpdates = automaticChecksEnabled
         }
     }
-    var mayInstall: () -> Bool = { !ReceiverManager.shared.ethernet.connected }
+    var mayInstall: () -> Bool = {
+        !ReceiverManager.shared.ethernet.connected && ReceiverManager.shared.networkListener.connectedClients.isEmpty
+    }
     private var controller: SPUStandardUpdaterController?
     private var started = false
     private var deferredInstall: (() -> Void)?
