@@ -11,7 +11,6 @@ let package = Package(
     ],
     products: [
         .executable(name: "WireDesk", targets: ["BetterCastSender"]),
-        .executable(name: "BetterCastSender", targets: ["BetterCastSender"]),
         .executable(name: "BetterCastReceiver", targets: ["BetterCastReceiver"]),
         .executable(name: "BetterCastReceiverIOS", targets: ["BetterCastReceiverIOS"]),
     ],
