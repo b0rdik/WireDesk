@@ -61,3 +61,10 @@ receiver.password
 *.key
 *.pem
 __pycache__/
+
+# WireDesk release build output
+/dist/
+/build/
+/test-build/
+/artifact/
+/Sources/BetterCastReceiverDesktop/artifact/

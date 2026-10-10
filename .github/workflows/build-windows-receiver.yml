@@ -44,8 +44,8 @@ jobs:
       - name: Install Qt
         shell: pwsh
         run: |
-          pip install aqtinstall
-          python -m aqt install-qt windows desktop 6.7.0 win64_msvc2019_64 --modules qtmultimedia --outputdir C:/Qt
+          pip install aqtinstall==3.3.0
+          python -m aqt install-qt windows desktop 6.7.0 win64_msvc2019_64 --modules qtmultimedia --outputdir C:/Qt --external "C:/Program Files/7-Zip/7z.exe"
           "C:/Qt/6.7.0/msvc2019_64/bin" >> $env:GITHUB_PATH
       - uses: actions/cache@v4
         with:
