@@ -1,6 +1,6 @@
-# BetterCast: Windows → выделенный Ethernet → Mac
+# WireDesk: Windows → выделенный Ethernet → Mac
 
-Изменения основаны на upstream `7bc5667966906a608fe5fb8825e16ce822aa4cd4`. Код и локальное Mac-приложение подготовлены. Полноценный второй монитор на двух устройствах **пока не подтверждён**: Windows-сборка, загрузка подписанного драйвера, физический Ethernet и вывод 120 новых кадров/с требуют проверки на Windows-ПК и MacBook. Результаты выполненных тестов — в [validation/ethernet-results.md](validation/ethernet-results.md).
+WireDesk основан на BetterCast upstream `7bc5667966906a608fe5fb8825e16ce822aa4cd4`. Код, интерфейсы и автоматизация реализованы. Полноценный второй монитор на двух устройствах **пока не подтверждён**: загрузка подписанного драйвера, передача по физическому кабелю и вывод 120 новых кадров/с требуют проверки на Windows-ПК и MacBook. Актуальные результаты сборки, установки и OTA — в [validation/wiredesk-results.md](validation/wiredesk-results.md); измерения тракта — в [validation/ethernet-results.md](validation/ethernet-results.md).
 
 ## Аудит и выбранная архитектура
 
@@ -13,7 +13,7 @@
 | Захват Windows | DXGI Desktop Duplication; именованный GDI fallback для IDD, который не поддерживает DuplicateOutput |
 | Windows кодер | FFmpeg, проба NVENC → AMF → QSV → VAAPI → libx264; запуск кодера, а не наличие имени, определяет доступность |
 | macOS приёмник в основном приложении | `ReceiverMode.swift`, `ReceiverNetworkListener.swift`, `ReceiverVideoDecoder.swift`, `ReceiverVideoRenderer.swift` |
-| Отдельный старый Swift Receiver | Другой executable `BetterCastReceiver`; новые выделенные настройки находятся **в основном BetterCastSender/BetterCast.app** |
+| Отдельный старый Swift Receiver | Другой executable `BetterCastReceiver`; новые выделенные настройки находятся **в WireDesk.app**, Swift target остаётся `BetterCastSender` |
 | Старый транспорт | TCP и UDP, Bonjour/AWDL, без аутентификации в проверенных обработчиках |
 | Новый выделенный транспорт | Один TLS/TCP-сеанс на порту 51820; видео и управление в одном сокете, ручные IPv4, версия протокола 1; без UDP/mDNS/STUN/TURN |
 | macOS вывод | Существующий AVSampleBufferDisplayLayer; новый слот последнего декодированного кадра, NSView CADisplayLink на macOS 14+, CVDisplayLink на 13 |
@@ -27,7 +27,7 @@
 ## Что изменено в тракте
 
 - Windows: выбор Ethernet/IP и Mac IPv4; `bind()` + `IP_UNICAST_IF`, проверка Ethernet, активности, принадлежности адреса и общей подсети; фактические socket endpoints; никакого перехода на другой адрес/интерфейс при ошибке.
-- Mac: `NWParameters.requiredInterface` и `requiredLocalEndpoint`, проверка фактического пути/IP, один подтверждённый отправитель, повторное ожидание того же соединения. Listener не выбирает запасной порт.
+- Mac: `NWParameters.requiredInterfaceType` и `requiredLocalEndpoint`, проверка конкретного BSD интерфейса и фактического IP, один подтверждённый отправитель, повторное ожидание того же соединения. Listener не выбирает запасной порт.
 - В выделенном режиме обнаружение других устройств отключено. Mac обнаруживает свои Ethernet-адаптеры через SystemConfiguration и IPv4 addresses, независимо от наличия интернет-шлюза; listener привязан к единственному выбранному IPv4 и типу wiredEthernet, а каждый входящий path дополнительно проверяет конкретный BSD interface/IP. Windows также выключает общий TCP/UDP receiver и приглашения; Mac останавливает sender browsing/invites/сеансы. Общие функции доступны после выхода из выделенного режима.
 - Сертификат Mac проверяется Windows по SHA-256, перенесённому кодом/файлом сопряжения. Первый сеанс от разрешённого IP подтверждается на Mac; краткие обрывы в том же запуске не требуют нового подтверждения. Обратный ввод и звук в выделенном режиме отключены.
 - Абсолютные монотонные сроки захвата учитывают 8,333… мс. Просроченные такты пропускаются; нет серии запоздалых захватов. DXGI не создаёт видеокадр без обновления; одинаковые GDI кадры не кодируются повторно.
@@ -49,7 +49,7 @@ H.264 NV12 — 4:2:0, с потерями. Высокий битрейт не в
 ```powershell
 $QtRoot = 'C:\Qt\6.7.0\msvc2019_64'
 $VcpkgRoot = 'C:\vcpkg'
-& "$VcpkgRoot\vcpkg.exe" install 'ffmpeg[x264,nvcodec,amf,qsv]:x64-windows' --recurse
+& "$VcpkgRoot\vcpkg.exe" install 'ffmpeg[core,avcodec,avformat,swscale,swresample,x264,nvcodec,amf,qsv]:x64-windows' --recurse
 cmake -S Sources/BetterCastReceiverDesktop -B work/windows-build -G Ninja `
   -DCMAKE_BUILD_TYPE=Release -DENABLE_SENDER=ON `
   "-DCMAKE_PREFIX_PATH=$QtRoot" `
@@ -117,12 +117,12 @@ system_profiler SPDisplaysDataType SPEthernetDataType
 Автоматическое создание широких Windows firewall rules при запуске удалено. Не отключайте firewall. Windows Sender обычно использует разрешённый исходящий TCP; если политика запрещает его, создайте **явное** правило от администратора, подставив EXE, интерфейс и свободную подсеть:
 
 ```powershell
-New-NetFirewallRule -DisplayName 'BetterCast Ethernet Out' -Direction Outbound `
+New-NetFirewallRule -DisplayName 'WireDesk Ethernet Out' -Direction Outbound `
   -Program 'C:\полный\путь\WireDesk.exe' -Action Allow -Protocol TCP `
   -RemotePort 51820 -RemoteAddress '10.77.120.0/30' -LocalAddress '10.77.120.1' `
   -InterfaceAlias 'Ethernet' -Profile Any
 # Откат только этого правила:
-Remove-NetFirewallRule -DisplayName 'BetterCast Ethernet Out'
+Remove-NetFirewallRule -DisplayName 'WireDesk Ethernet Out'
 ```
 
 Входящие Windows TCP/UDP и mDNS этому режиму не нужны. Старые широкие правила существующей установки не удаляются автоматически; просмотрите их отдельно. На Mac разрешите входящие подключения **этому локальному приложению** в системном Firewall. Стандартный Mac Application Firewall ограничивает приложение; привязка listener к Ethernet/IP и проверка peer внутри приложения ограничивают сеанс. Глобальный PF не меняется. Для корпоративного firewall/PF нужен согласованный с администратором allow TCP 51820 именно от Windows Ethernet IP к Mac Ethernet IP; не добавляйте правила на весь интернет.
@@ -179,6 +179,6 @@ BETTERCAST_TEST_TRANSPORT=1 bash scripts/test-ethernet.sh
 
 ## Ограничения и оставшиеся действия
 
-Windows бинарник/аппаратные NVENC/AMF/QSV/курсор/QueryDisplayConfig и установка подписи VDD не проверены. Сборка C++ на Mac проверяет переносимые части, не эти Windows API. Нужны реальный Windows build и аппаратная таблица выше. Оптимизация CPU swscale/очередей реализована, сравнительный эффект на Windows ещё не измерен. Zero-copy, HEVC, 4:4:4, аудио и обратный ввод в новом протоколе не заявляются. Legacy приёмник и его протоколы остаются отдельными режимами; их нельзя смешивать с dedicated TLS.
+Результаты нативной Windows-сборки и запуска установщика в CI указаны в [актуальном отчёте](validation/wiredesk-results.md). Аппаратные NVENC/AMF/QSV, захват курсора, топология QueryDisplayConfig и установка подписанного VDD на реальном ПК не проверены. Сборка C++ на Mac проверяет переносимые части, не эти Windows API. Нужна аппаратная таблица выше. Оптимизация CPU swscale/очередей реализована, сравнительный эффект на Windows ещё не измерен. Zero-copy, HEVC, 4:4:4, аудио и обратный ввод в новом протоколе не заявляются. Legacy приёмник и его протоколы остаются отдельными режимами; их нельзя смешивать с dedicated TLS.
 
 Новые runtime компоненты: системные Network/Security/CryptoKit/CoreVideo/QuartzCore и TLS в уже используемом Qt Network. FFmpeg/swscale уже зависимость проекта; дополнительные аппаратные features должны войти в Windows сборку. Сохранены GPL-3.0 и авторские уведомления. При распространении сохраняйте также лицензии Qt, FFmpeg/x264, аппаратных SDK и MIT VDD; не добавляйте GPL-incompatible nonfree FFmpeg options.
