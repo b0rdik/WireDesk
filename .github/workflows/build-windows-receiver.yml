@@ -47,15 +47,22 @@ jobs:
           pip install aqtinstall==3.3.0
           python -m aqt install-qt windows desktop 6.7.0 win64_msvc2019_64 --modules qtmultimedia --outputdir C:/Qt --external "C:/Program Files/7-Zip/7z.exe"
           "C:/Qt/6.7.0/msvc2019_64/bin" >> $env:GITHUB_PATH
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: vcpkg-cache
         with:
           path: C:/vcpkg/installed
-          key: wiredesk-vcpkg-ffmpeg-v1-${{ runner.os }}
+          key: wiredesk-vcpkg-ffmpeg-v2-${{ runner.os }}
       - name: Install FFmpeg hardware encoders and x264
         shell: pwsh
         run: |
-          vcpkg install "ffmpeg[x264,nvcodec,amf,qsv]:x64-windows" --recurse
+          vcpkg install "ffmpeg[avcodec,avformat,avutil,swscale,swresample,x264,nvcodec,amf,qsv]:x64-windows" --no-default-features --recurse
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Save dependencies before application compilation
+        if: steps.vcpkg-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: C:/vcpkg/installed
+          key: wiredesk-vcpkg-ffmpeg-v2-${{ runner.os }}
       - name: Build native Windows application and tests
         shell: pwsh
         run: |

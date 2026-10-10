@@ -273,9 +273,9 @@ MainWindow::MainWindow(QWidget* parent)
         if (m_senderStatusLabel) m_senderStatusLabel->setText("Второй экран подключён");
         LogManager::instance().log("Sender: Connected and streaming");
     });
-    connect(m_sender, &SenderController::disconnected, this, [this]() { m_streamConnected=false; m_updater->setSessionActive(!m_network->clients().isEmpty()); });
+    connect(m_sender, &SenderController::disconnected, this, [this]() { m_streamConnected=false; m_updater->setSessionActive(m_sender->isSending() || !m_network->clients().isEmpty()); });
     connect(m_sender, &SenderController::stopped, this, [this]() {
-        m_streamConnected=false; m_updater->setSessionActive(!m_network->clients().isEmpty());
+        m_streamConnected=false; m_updater->setSessionActive(m_sender->isSending() || !m_network->clients().isEmpty());
         if (m_sendBtn) m_sendBtn->setEnabled(true);
         if (m_stopSendBtn) m_stopSendBtn->setEnabled(false);
         if (m_sendHostEdit) m_sendHostEdit->setEnabled(true);
@@ -1153,6 +1153,7 @@ void MainWindow::onSendScreenClicked() {
     int bitrate = m_bitrateSpinBox->value();
     LogManager::instance().log(QString("Starting sender to %1 at %2 FPS, %3 Mbps")
                                    .arg(host).arg(fps).arg(bitrate));
+    m_updater->setSessionActive(true);
     if (!m_sender->startSending(host, m_selectedReceiverPort, fps, bitrate)) onStopSendingClicked();
 }
 

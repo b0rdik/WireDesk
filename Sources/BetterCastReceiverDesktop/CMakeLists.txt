@@ -45,6 +45,9 @@ if(FFMPEG_FOUND)
     message(STATUS "  FFMPEG_LIBRARY_DIRS: ${FFMPEG_LIBRARY_DIRS}")
     set(FFMPEG_ALL_INCLUDE_DIRS ${FFMPEG_INCLUDE_DIRS})
     set(FFMPEG_ALL_LIBRARIES ${FFMPEG_LIBRARIES})
+    # vcpkg defaults only return avcodec/avformat/avutil; screen conversion needs swscale explicitly.
+    find_library(FFMPEG_SWSCALE_LIBRARY NAMES swscale REQUIRED)
+    list(APPEND FFMPEG_ALL_LIBRARIES ${FFMPEG_SWSCALE_LIBRARY})
     # Some vcpkg versions return bare lib names — also set library dirs
     if(FFMPEG_LIBRARY_DIRS)
         set(FFMPEG_ALL_LIBRARY_DIRS ${FFMPEG_LIBRARY_DIRS})

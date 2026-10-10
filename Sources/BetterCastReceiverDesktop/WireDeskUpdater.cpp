@@ -11,7 +11,7 @@ WireDeskUpdater::~WireDeskUpdater() {
 int WireDeskUpdater::canShutdown() { return !s_sessionActive.load(); }
 void WireDeskUpdater::requestShutdown() {
     if (s_sessionActive.load()) return;
-    QMetaObject::invokeMethod(QCoreApplication::instance(), [] { QCoreApplication::quit(); }, Qt::QueuedConnection);
+    QMetaObject::invokeMethod(QCoreApplication::instance(), [] { if (!s_sessionActive.load()) QCoreApplication::quit(); }, Qt::QueuedConnection);
 }
 void WireDeskUpdater::setSessionActive(bool active) { s_sessionActive.store(active); }
 void WireDeskUpdater::start() {

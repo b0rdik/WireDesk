@@ -73,6 +73,7 @@ struct BetterCastSenderApp: App {
                 )
             }
         }
+        .defaultSize(width: 980, height: 760)
         .commands {
             CommandGroup(after: .appInfo) { Button("Проверить обновления…") { UpdateChecker.shared.downloadAndOpen() } }
         }

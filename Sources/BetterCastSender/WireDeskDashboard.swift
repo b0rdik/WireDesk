@@ -139,6 +139,7 @@ struct WireDeskDashboard: View {
             Toggle("Автоматически ждать Windows при запуске", isOn: $autoListen)
             TextField("Ожидаемый IP Windows (можно оставить пустым до сопряжения)", text: $link.expectedPeer).textFieldStyle(.roundedBorder).disabled(link.running)
             HStack { Text("Сертификат: \(link.identityPath.isEmpty ? "создаётся автоматически" : URL(fileURLWithPath: link.identityPath).lastPathComponent)").font(.caption); Spacer(); Button("Выбрать свой") { chooseIdentity() }.disabled(link.running) }
+            SecureField("Пароль своей identity (пустой для автоматической)", text: $link.identityPassword).textFieldStyle(.roundedBorder).disabled(link.running)
             Text("SHA-256: \(link.fingerprint)").font(.system(size: 10, design: .monospaced)).textSelection(.enabled)
             Toggle("Проверять обновления автоматически", isOn: $updater.automaticChecksEnabled)
             Text("Обновления загружаются через интернет отдельно от видеопотока. Установка ждёт окончания активного сеанса.").font(.caption).foregroundStyle(.secondary)
