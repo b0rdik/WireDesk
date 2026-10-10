@@ -1,0 +1,61 @@
+warning: 'bettercast': found 1 file(s) which are unhandled; explicitly declare them as resources or exclude from the target
+    /Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastReceiverIOS/Info.plist
+Building for production...
+[Planning deferred tasks]
+[25 / 39] BetterCastSender-product
+[26 / 40] BetterCastReceiver-product
+[28 / 41] BetterCastReceiverIOS-product
+[29 / 42] BetterCastReceiverIOS-product
+[31 / 43] BetterCastReceiverIOS-product
+[33 / 43] BetterCastReceiverIOS-product
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastReceiver/BetterCastReceiverApp.swift:188:15: warning: 'allowedFileTypes' was deprecated in macOS 12.0: Use -allowedContentTypes instead [#DeprecatedDeclaration]
+186 |     private func saveLogs() {
+187 |         let panel = NSSavePanel()
+188 |         panel.allowedFileTypes = ["txt"]
+    |               `- warning: 'allowedFileTypes' was deprecated in macOS 12.0: Use -allowedContentTypes instead [#DeprecatedDeclaration]
+189 |         panel.nameFieldStringValue = "BetterCast_Receiver_Logs.txt"
+190 |
+
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastReceiver/VideoRenderer.swift:186:9: warning: 'CMTimebaseCreateWithMasterClock(allocator:masterClock:timebaseOut:)' was deprecated in macOS 10.10: renamed to 'CMTimebaseCreateWithSourceClock(allocator:sourceClock:timebaseOut:)' [#DeprecatedDeclaration]
+184 |         // Critical: Set timebase to run immediately
+185 |         var timebase: CMTimebase?
+186 |         CMTimebaseCreateWithMasterClock(allocator: kCFAllocatorDefault, masterClock: CMClockGetHostTimeClock(), timebaseOut: &timebase)
+    |       [35 / 43] BetterCastReceiver-product
+  |- warning: 'CMTimebaseCreateWithMasterClock(allocator:masterClock:timebaseOut:)' was deprecated in macOS 10.10: renamed to 'CMTimebaseCreateWithSourceClock(allocator:sourceClock:timebaseOut:)' [#DeprecatedDeclaration]
+    |         `- note: use 'CMTimebaseCreateWithSourceClock(allocator:sourceClock:timebaseOut:)' instead
+187 |         if let timebase = timebase {
+188 |             displayLayer.controlTimebase = timebase
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[37 / 43] BetterCastReceiver-product
+[38 / 43] BetterCastReceiver-product
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastSender/PhoneCapture.swift:85:37: warning: 'devices()' was deprecated in macOS 10.15: Use AVCaptureDeviceDiscoverySession instead. [#DeprecatedDeclaration]
+ 83 |         // screen: it is muxed rather than video, so every typed discovery session
+ 84 |         // filters it out.
+ 85 |         let found = AVCaptureDevice.devices()
+    |                                     `- warning: 'devices()' was deprecated in macOS 10.15: Use AVCaptureDeviceDiscoverySession instead. [#DeprecatedDeclaration]
+ 86 |             .filter { $0.modelID == "iOS Device" }
+ 87 |             .map { Device(id: $0.uniqueID, name: $0.localizedName) }
+
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastSender/PhoneCapture.swift:139:41: warning: 'devices()' was deprecated in macOS 10.15: Use AVCaptureDeviceDiscoverySession instead. [#DeprecatedDeclaration]
+137 |         // Re-read the device: a denied permission earlier in the process can leave a
+138 |         // stale entry that no longer resolves.
+139 |         guard let dev = AVCaptureDevice.devices().first(where: { $0.uniqueID == d[39 / 43] BetterCastSender-product
+eviceID }) else {
+    |                                         `- warning: 'devices()' was deprecated in macOS 10.15: Use AVCaptureDeviceDiscoverySession instead. [#DeprecatedDeclaration]
+140 |             status = "\(name) is no longer available"
+141 |             return
+
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastSender/ScreenRecorder.swift:329:9: warning: switch must be exhaustive
+327 |     private var audioFrameCount = 0
+328 |     func stream(_ stream: SCStream, didOutputSampleBuffer sampleBuffer: CMSampleBuffer, of type: SCStreamOutputType) {
+329 |         switch type {
+    |         |- warning: switch must be exhaustive
+    |         `- note: add missing case: '.microphone'
+330 |         case .screen:
+331 |             frameCount += 1
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+[41 / 43] BetterCastSender-product
+[42 / 43] BetterCastSender-product
+Build complete! (17,19 sec)

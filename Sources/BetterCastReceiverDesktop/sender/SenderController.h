@@ -3,6 +3,9 @@
 #include <QObject>
 #include <QString>
 #include <cstdint>
+#include "NetworkSender.h"
+#include <QElapsedTimer>
+#include <QTimer>
 
 class ScreenCapture;
 class VideoEncoderFF;
@@ -32,6 +35,7 @@ public:
     VirtualDisplayVDD* vdd() const { return m_vdd; }
 
     QString encoderInfo() const;
+    void setEthernetConfig(const EthernetConfig& config) { m_ethernet = config; }
 
 signals:
     void started();
@@ -48,12 +52,19 @@ private slots:
     void onDisconnected();
 
 private:
+    EthernetConfig m_ethernet;
+    QTimer m_statsTimer;
+    QElapsedTimer m_statsClock;
+    quint64 m_captured = 0, m_encoded = 0, m_bytes = 0, m_rawDrops = 0;
+    double m_encodeMS = 0;
+    QJsonObject m_peerStats;
     ScreenCapture* m_capture = nullptr;
     VideoEncoderFF* m_encoder = nullptr;
     NetworkSender* m_network = nullptr;
     VirtualDisplayVDD* m_vdd = nullptr;
     bool m_sending = false;
     bool m_encoderReady = false;
+    int m_streamWidth = 0, m_streamHeight = 0;
     int m_fps = 30;
     int m_bitrateMbps = 8;
     int m_adapterIndex = 0;

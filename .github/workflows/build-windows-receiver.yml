@@ -82,12 +82,12 @@ jobs:
           restore-keys: |
             vcpkg-ffmpeg-x64-windows-
 
-      - name: Install FFmpeg via vcpkg (with x264 encoder)
+      - name: Install FFmpeg via vcpkg (hardware encoders and x264 fallback)
         shell: pwsh
         env:
           VCPKG_ROOT: C:/vcpkg
         run: |
-          vcpkg install "ffmpeg[x264]:x64-windows" --recurse
+          vcpkg install "ffmpeg[x264,nvcodec,amf,qsv]:x64-windows" --recurse
 
       - name: Generate Windows icon (.ico)
         shell: pwsh

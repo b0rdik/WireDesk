@@ -1,0 +1,18 @@
+[libx264 @ 0x755708c000] using cpu capabilities: ARMv8 NEON DotProd I8MM
+[libx264 @ 0x755708c000] profile High, level 4.1, 4:2:0, 8-bit
+Sender: Using encoder: libx264 at 640 x 360 @ 60
+[libx264 @ 0x755708c000] frame I:2     Avg QP: 0.00  size:  1164
+[libx264 @ 0x755708c000] frame P:58    Avg QP: 0.00  size:   124
+[libx264 @ 0x755708c000] mb I  I16..4: 99.9%  0.0%  0.1%
+[libx264 @ 0x755708c000] mb P  I16..4:  0.0%  0.0%  0.0%  P16..4:  0.1%  0.0%  0.0%  0.0%  0.0%    skip:99.9%
+[libx264 @ 0x755708c000] final ratefactor: -31.42
+[libx264 @ 0x755708c000] 8x8 transform intra:0.0% inter:0.0%
+[libx264 @ 0x755708c000] coded y,uvDC,uvAC intra: 0.8% 0.0% 0.0% inter: 0.0% 0.0% 0.0%
+[libx264 @ 0x755708c000] i16 v,h,dc,p: 78%  0% 22%  0%
+[libx264 @ 0x755708c000] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu:  0%  0% 100%  0%  0%  0%  0%  0%  0%
+[libx264 @ 0x755708c000] i8c dc,h,v,p: 100%  0%  0%  0%
+[libx264 @ 0x755708c000] Weighted P-Frames: Y:0.0% UV:0.0%
+[libx264 @ 0x755708c000] kb/s:76.09
+PASS mixed Annex-B start codes, complete SPS/PPS, avcC 2/4-byte packet lengths and malformed packet rejection
+PASS encoder libx264: 60 valid AVCC payloads, 2 IDRs with SPS/PPS, 14.4ms batch; invalid odd mode rejected
+PASS 120fps never silently falls back to libx264

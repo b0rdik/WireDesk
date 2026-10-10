@@ -54,3 +54,9 @@ Sources/BetterCastReceiverAndroid/keystore.properties
 *.keystore
 LegacyMacReceiver/.build/
 Sources/BetterCastReceiverAndroid/local.properties.bak
+
+# Local Ethernet tests and identities
+work/
+*.p12
+receiver.password
+__pycache__/

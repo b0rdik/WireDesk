@@ -1,0 +1,236 @@
+PASS framing limits, version/mode negotiation, 10000 malformed-header cases
+Sources/BetterCastSender/ReceiverVideoRenderer.swift:205:26: warning: 'isReadyForMoreMediaData' was deprecated in macOS 15.0: Use sampleBufferRenderer's readyForMoreMediaData instead [#DeprecatedDeclaration]
+203 |         updateScreenInfo()
+204 |         guard let frame else { return } // repeated scanout is never counted as a new video frame
+205 |         if !displayLayer.isReadyForMoreMediaData { displayLayer.flush() }
+    |                          `- warning: 'isReadyForMoreMediaData' was deprecated in macOS 15.0: Use sampleBufferRenderer's readyForMoreMediaData instead [#DeprecatedDeclaration]
+206 |         enqueue(frame); submitted += 1
+207 |     }
+
+Sources/BetterCastSender/ReceiverVideoRenderer.swift:205:65: warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+203 |         updateScreenInfo()
+204 |         guard let frame else { return } // repeated scanout is never counted as a new video frame
+205 |         if !displayLayer.isReadyForMoreMediaData { displayLayer.flush() }
+    |                                                                 `- warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+206 |         enqueue(frame); submitted += 1
+207 |     }
+
+Sources/BetterCastSender/ReceiverVideoRenderer.swift:220:38: warning: 'CVDisplayLinkStop' was deprecated in macOS 15.0: use NSView.displayLink(target:selector:), NSWindow.displayLink(target:selector:), or NSScreen.displayLink(target:selector:)  [#DeprecatedDeclaration]
+218 |     }
+219 |     private func configureDisplayLink() {
+220 |         if let link = fallbackLink { CVDisplayLinkStop(link); fallbackLink = nil }
+    |                                      `- warning: 'CVDisplayLinkStop' was deprecated in macOS 15.0: use NSView.displayLink(target:selector:), NSWindow.displayLink(target:selector:), or NSScreen.displayLink(target:selector:)  [#DeprecatedDeclaration]
+221 |         if #available(macOS 14, *), let link = nativeLink as? CADisplayLink { link.invalidate() }
+222 |         nativeLink = nil
+
+Sources/BetterCastSender/ReceiverVideoRenderer.swift:274:38: warning: 'CVDisplayLinkStop' was deprecated in macOS 15.0: use NSView.displayLink(target:selector:), NSWindow.displayLink(target:selector:), or NSScreen.displayLink(target:selector:)  [#DeprecatedDeclaration]
+272 |     deinit {
+273 |         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+274 |         if let link = fallbackLink { CVDisplayLinkStop(link) }
+    |                                      `- warning: 'CVDisplayLinkStop' was deprecated in macOS 15.0: use NSView.displayLink(target:selector:), NSWindow.displayLink(target:selector:), or NSScreen.displayLink(target:selector:)  [#DeprecatedDeclaration]
+275 |         if #available(macOS 14, *), let link = nativeLink as? CADisplayLink { link.invalidate() }
+276 |     }
+
+Sources/BetterCastSender/ReceiverVideoRenderer.swift:286:25: warning: 'status' was deprecated in macOS 15.0: Use sampleBufferRenderer's status instead [#DeprecatedDeclaration]
+284 |     func enqueue(_ sampleBuffer: CMSampleBuffer) {
+285 |         // Recover from failed state — try flush first, rebuild layer if still stuck
+286 |         if displayLayer.status == .failed {
+    |                         `- warning: 'status' was deprecated in macOS 15.0: Use sampleBufferRenderer's status instead [#DeprecatedDeclaration]
+287 |             LogManager.shared.log("ReceiverVideoRenderer: Display layer failed, recovering...")
+288 |             rebuildDisplayLayer()
+
+Sources/BetterCastSender/ReceiverVideoRenderer.swift:310:22: warning: 'enqueue' was deprecated in macOS 15.0: Use sampleBufferRenderer's enqueueSampleBuffer: instead [#DeprecatedDeclaration]
+308 |         }
+309 |
+310 |         displayLayer.enqueue(sampleBuffer)
+    |                      `- warning: 'enqueue' was deprecated in macOS 15.0: Use sampleBufferRenderer's enqueueSampleBuffer: instead [#DeprecatedDeclaration]
+311 |     }
+312 |
+
+Sources/BetterCastSender/ReceiverVideoRenderer.swift:316:22: warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+314 |     func flushForFormatChange() {
+315 |         frameLock.lock(); pendingFrame = nil; frameLock.unlock()
+316 |         displayLayer.flush()
+    |                      `- warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+317 |     }
+318 |
+
+Sources/BetterCastSender/ReceiverVideoRenderer.swift:321:22: warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+319 |     /// Rebuild the display layer from scratch when flush alone cannot recover it.
+320 |     private func rebuildDisplayLayer() {
+321 |         displayLayer.flush()
+    |                      `- warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+322 |         displayLayer.removeFromSuperlayer()
+323 |
+
+Sources/BetterCastSender/ReceiverVideoRenderer.swift:341:22: warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+339 |     func flush() {
+340 |         frameLock.lock(); pendingFrame = nil; frameLock.unlock()
+341 |         displayLayer.flush()
+    |                      `- warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+342 |         DispatchQueue.main.async {
+343 |             self.videoSize = .zero
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+PASS: 240/240 1080p frames decoded, VideoToolbox hardware, 0.73s (329.8 FPS batch throughput); mailbox 1, drops 239
+Batch decode throughput is not capture/network/presentation FPS or end-to-end latency.
+-- The CXX compiler identification is AppleClang 21.0.0.21000334
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Performing Test HAVE_STDATOMIC
+-- Performing Test HAVE_STDATOMIC - Success
+-- Found WrapAtomic: TRUE
+-- Configuring done (1.5s)
+-- Generating done (0.0s)
+-- Build files have been written to: /Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/work/final-tests/cpp
+[  0%] Built target transport-tests_autogen_timestamp_deps
+[ 10%] Automatic MOC for target transport-tests
+[ 10%] Built target transport-tests_autogen
+[ 20%] Building CXX object CMakeFiles/transport-tests.dir/transport-tests_autogen/mocs_compilation.cpp.o
+[ 30%] Building CXX object CMakeFiles/transport-tests.dir/TransportTests.cpp.o
+[ 40%] Building CXX object CMakeFiles/transport-tests.dir/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastReceiverDesktop/sender/NetworkSender.cpp.o
+[ 50%] Linking CXX executable transport-tests
+[ 50%] Built target transport-tests
+[ 50%] Built target encoder-tests_autogen_timestamp_deps
+[ 60%] Automatic MOC for target encoder-tests
+[ 60%] Built target encoder-tests_autogen
+[ 70%] Building CXX object CMakeFiles/encoder-tests.dir/encoder-tests_autogen/mocs_compilation.cpp.o
+[ 80%] Building CXX object CMakeFiles/encoder-tests.dir/EncoderTests.cpp.o
+[ 90%] Building CXX object CMakeFiles/encoder-tests.dir/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastReceiverDesktop/sender/VideoEncoderFF.cpp.o
+[100%] Linking CXX executable encoder-tests
+[100%] Built target encoder-tests
+[libx264 @ 0x750308c000] using cpu capabilities: ARMv8 NEON DotProd I8MM
+[libx264 @ 0x750308c000] profile High, level 4.1, 4:2:0, 8-bit
+Sender: Using encoder: libx264 at 640 x 360 @ 60
+[libx264 @ 0x750308c000] frame I:2     Avg QP: 0.00  size:  1164
+[libx264 @ 0x750308c000] frame P:58    Avg QP: 0.00  size:   124
+[libx264 @ 0x750308c000] mb I  I16..4: 99.9%  0.0%  0.1%
+[libx264 @ 0x750308c000] mb P  I16..4:  0.0%  0.0%  0.0%  P16..4:  0.1%  0.0%  0.0%  0.0%  0.0%    skip:99.9%
+[libx264 @ 0x750308c000] final ratefactor: -31.42
+[libx264 @ 0x750308c000] 8x8 transform intra:0.0% inter:0.0%
+[libx264 @ 0x750308c000] coded y,uvDC,uvAC intra: 0.8% 0.0% 0.0% inter: 0.0% 0.0% 0.0%
+[libx264 @ 0x750308c000] i16 v,h,dc,p: 78%  0% 22%  0%
+[libx264 @ 0x750308c000] i4 v,h,dc,ddl,ddr,vr,hd,vl,hu:  0%  0% 100%  0%  0%  0%  0%  0%  0%
+[libx264 @ 0x750308c000] i8c dc,h,v,p: 100%  0%  0%  0%
+[libx264 @ 0x750308c000] Weighted P-Frames: Y:0.0% UV:0.0%
+[libx264 @ 0x750308c000] kb/s:76.09
+PASS encoder libx264: 60 valid AVCC payloads, 2 IDRs with SPS/PPS, 11.6ms batch; invalid odd mode rejected
+PASS 120fps never silently falls back to libx264
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastSender/ReceiverVideoRenderer.swift:205:26: warning: 'isReadyForMoreMediaData' was deprecated in macOS 15.0: Use sampleBufferRenderer's readyForMoreMediaData instead [#DeprecatedDeclaration]
+203 |         updateScreenInfo()
+204 |         guard let frame else { return } // repeated scanout is never counted as a new video frame
+205 |         if !displayLayer.isReadyForMoreMediaData { displayLayer.flush() }
+    |                          `- warning: 'isReadyForMoreMediaData' was deprecated in macOS 15.0: Use sampleBufferRenderer's readyForMoreMediaData instead [#DeprecatedDeclaration]
+206 |         enqueue(frame); submitted += 1
+207 |     }
+
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastSender/ReceiverVideoRenderer.swift:205:65: warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+203 |         updateScreenInfo()
+204 |         guard let frame else { return } // repeated scanout is never counted as a new video frame
+205 |         if !displayLayer.isReadyForMoreMediaData { displayLayer.flush() }
+    |                                                                 `- warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+206 |         enqueue(frame); submitted += 1
+207 |     }
+
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastSender/ReceiverVideoRenderer.swift:220:38: warning: 'CVDisplayLinkStop' was deprecated in macOS 15.0: use NSView.displayLink(target:selector:), NSWindow.displayLink(target:selector:), or NSScreen.displayLink(target:selector:)  [#DeprecatedDeclaration]
+218 |     }
+219 |     private func configureDisplayLink() {
+220 |         if let link = fallbackLink { CVDisplayLinkStop(link); fallbackLink = nil }
+    |                                      `- warning: 'CVDisplayLinkStop' was deprecated in macOS 15.0: use NSView.displayLink(target:selector:), NSWindow.displayLink(target:selector:), or NSScreen.displayLink(target:selector:)  [#DeprecatedDeclaration]
+221 |         if #available(macOS 14, *), let link = nativeLink as? CADisplayLink { link.invalidate() }
+222 |         nativeLink = nil
+
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastSender/ReceiverVideoRenderer.swift:274:38: warning: 'CVDisplayLinkStop' was deprecated in macOS 15.0: use NSView.displayLink(target:selector:), NSWindow.displayLink(target:selector:), or NSScreen.displayLink(target:selector:)  [#DeprecatedDeclaration]
+272 |     deinit {
+273 |         if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+274 |         if let link = fallbackLink { CVDisplayLinkStop(link) }
+    |                                      `- warning: 'CVDisplayLinkStop' was deprecated in macOS 15.0: use NSView.displayLink(target:selector:), NSWindow.displayLink(target:selector:), or NSScreen.displayLink(target:selector:)  [#DeprecatedDeclaration]
+275 |         if #available(macOS 14, *), let link = nativeLink as? CADisplayLink { link.invalidate() }
+276 |     }
+
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastSender/ReceiverVideoRenderer.swift:286:25: warning: 'status' was deprecated in macOS 15.0: Use sampleBufferRenderer's status instead [#DeprecatedDeclaration]
+284 |     func enqueue(_ sampleBuffer: CMSampleBuffer) {
+285 |         // Recover from failed state — try flush first, rebuild layer if still stuck
+286 |         if displayLayer.status == .failed {
+    |                         `- warning: 'status' was deprecated in macOS 15.0: Use sampleBufferRenderer's status instead [#DeprecatedDeclaration]
+287 |             LogManager.shared.log("ReceiverVideoRenderer: Display layer failed, recovering...")
+288 |             rebuildDisplayLayer()
+
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastSender/ReceiverVideoRenderer.swift:310:22: warning: 'enqueue' was deprecated in macOS 15.0: Use sampleBufferRenderer's enqueueSampleBuffer: instead [#DeprecatedDeclaration]
+308 |         }
+309 |
+310 |         displayLayer.enqueue(sampleBuffer)
+    |                      `- warning: 'enqueue' was deprecated in macOS 15.0: Use sampleBufferRenderer's enqueueSampleBuffer: instead [#DeprecatedDeclaration]
+311 |     }
+312 |
+
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastSender/ReceiverVideoRenderer.swift:316:22: warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+314 |     func flushForFormatChange() {
+315 |         frameLock.lock(); pendingFrame = nil; frameLock.unlock()
+316 |         displayLayer.flush()
+    |                      `- warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+317 |     }
+318 |
+
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastSender/ReceiverVideoRenderer.swift:321:22: warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+319 |     /// Rebuild the display layer from scratch when flush alone cannot recover it.
+320 |     private func rebuildDisplayLayer() {
+321 |         displayLayer.flush()
+    |                      `- warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+322 |         displayLayer.removeFromSuperlayer()
+323 |
+
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastSender/ReceiverVideoRenderer.swift:341:22: warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+339 |     func flush() {
+340 |         frameLock.lock(); pendingFrame = nil; frameLock.unlock()
+341 |         displayLayer.flush()
+    |                      `- warning: 'flush()' was deprecated in macOS 15.0: Use sampleBufferRenderer's flush instead [#DeprecatedDeclaration]
+342 |         DispatchQueue.main.async {
+343 |             self.videoSize = .zero
+
+[#DeprecatedDeclaration]: <https://docs.swift.org/compiler/documentation/diagnostics/deprecated-declaration>
+.....+..........+.....+.+...............+..+............+......+.++++++++++++++++++++++++++++++++++++++++++*............+....+.....+.++++++++++++++++++++++++++++++++++++++++++*.............................+............+...+......+..........+......+..+...+...................+.....+....+.....+....+...............+.....+.+............+++++
+..+..............+............+....+......+......+.....+....+.....+.+..+.+...............+.................+...+.+...++++++++++++++++++++++++++++++++++++++++++*....+.........+......+..+.......+..++++++++++++++++++++++++++++++++++++++++++*.....+.....+................+...........+............+.....................+.......+.....+......................+...+............+...+........+.........+......+.+.....+...+.......+.....+......+.......+..+...+.+..+....+...+.....+.......+........+......+.+...+.....+.......+.....+.+............+..+........................+.........+.+.........+..+................+...+..+..........+++++
+-----
+sha256 Fingerprint=2D:D1:5E:12:E4:0A:41:37:2A:0A:0E:04:21:21:C2:67:8F:5D:53:4D:03:80:FF:E8:34:C6:82:5D:0D:2F:63:7C
+Select receiver.p12 on the Mac, then copy its displayed SHA-256 fingerprint to Windows. Keep the private files private.
+good PASS Qt TLS pinned transport: 240 moving payloads paced at 120 FPS, RTT 1.0ms; 127.0.0.1:61743 → 127.0.0.1:51820 (lo0)
+
+reconnect Transport status: Reset compressed stream for keyframe recovery
+PASS Qt TLS pinned transport: 240 moving payloads paced at 120 FPS, RTT 1.0ms; 127.0.0.1:61745 → 127.0.0.1:51820 (lo0)
+PASS reconnect resumed with a fresh keyframe session
+
+bad Transport status: Receiver certificate mismatch; check pairing fingerprint
+PASS rejected bad; no connection, Stop cancels retry
+
+forbidden Transport status: Selected Ethernet IPv4/subnet unavailable; no fallback permitted
+PASS rejected forbidden; no connection, Stop cancels retry
+
+overload Transport status: TCP queue limit reached: reset stream, recover with IDR; reduce resolution/FPS
+PASS rejected overload; no connection, Stop cancels retry
+
+STATUS Stopped
+READY 2dd15e12e40a41372a0a0e042121c2678f5d534d0380ffe834c6825d0d2f637c
+STATUS Waiting for 127.0.0.1 on lo0 127.0.0.1:51820 (TLS)
+STATUS Connected: H.264, 120 FPS target, dedicated TLS/Ethernet
+ReceiverVideoDecoder: Session Created, VideoToolbox hardware
+STATUS Closed or invalid packet header
+STATUS Connected: H.264, 120 FPS target, dedicated TLS/Ethernet
+ReceiverVideoDecoder: Session Created, VideoToolbox hardware
+STATUS Closed or invalid packet header
+STATUS Connected: H.264, 120 FPS target, dedicated TLS/Ethernet
+ReceiverVideoDecoder: Session Created, VideoToolbox hardware
+STATUS Closed or invalid packet header
+STATUS Disconnected; waiting for the same Ethernet connection
+STATUS Connected: H.264, 120 FPS target, dedicated TLS/Ethernet
+STATUS Closed or invalid packet header
+Decoded total 599
+HARNESS frames 599; decoder VideoToolbox hardware; mailbox 0
+
+PASS TLS interoperability, reference recovery, certificate rejection, interface fail-closed and bounded send queues.

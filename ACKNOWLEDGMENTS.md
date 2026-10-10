@@ -20,3 +20,10 @@ included in BetterCast. The debt is one of ideas, and it deserves credit.
   ordered-queue decoding approach used by the Android receiver.
 - [Moonlight](https://github.com/moonlight-stream) (GPL-3.0) — the Android
   MediaCodec low-latency vendor keys used by the Android receiver.
+
+## Dedicated Ethernet mode
+
+- [VirtualDrivers/Virtual-Display-Driver](https://github.com/VirtualDrivers/Virtual-Display-Driver) — MIT, Copyright (c) 2024 Virtual Display. Integration refers to release 25.7.23 and reuses its installed monitor through Windows display APIs; no driver code or binaries are vendored by this change. Retain its MIT notice when distributing a driver package.
+- Qt Network TLS uses the Qt license/backend already supplied with the desktop build; preserve Qt notices and applicable source/relinking obligations.
+- FFmpeg/libswscale and optional NVENC/AMF/QSV features remain external dependencies. Windows build enables these explicitly. libx264 is a GPL dependency; do not use nonfree/GPL-incompatible FFmpeg configurations for distribution.
+- Network, Security, CryptoKit, CoreVideo and QuartzCore are system frameworks on macOS. No custom cryptographic construction is used.

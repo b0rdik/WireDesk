@@ -164,6 +164,10 @@ class ReceiverManager: ObservableObject {
     let videoRenderer = ReceiverVideoRenderer()
     let windowController = ReceiverWindowController()
     @Published var isRunning = false
+    @Published var dedicatedEthernet = UserDefaults.standard.bool(forKey: "ethernet.enabled") {
+        didSet { UserDefaults.standard.set(dedicatedEthernet, forKey: "ethernet.enabled") }
+    }
+    lazy var ethernet = DedicatedEthernetReceiver(decoder: videoDecoder, renderer: videoRenderer)
 
     private var cancellables = Set<AnyCancellable>()
 
@@ -202,6 +206,14 @@ class ReceiverManager: ObservableObject {
 
     func start() {
         guard !isRunning else { return }
+        UserDefaults.standard.set(dedicatedEthernet, forKey: "ethernet.enabled")
+        if dedicatedEthernet {
+            videoRenderer.onInput = nil
+            ethernet.onConnected = { [weak self] in guard let self else { return }; self.windowController.open(renderer: self.videoRenderer) }
+            ethernet.start()
+            isRunning = ethernet.running
+            return
+        }
         networkListener.setup(decoder: videoDecoder, renderer: videoRenderer)
         videoRenderer.onInput = { [weak self] event in
             self?.networkListener.sendInputEvent(event)
@@ -213,6 +225,7 @@ class ReceiverManager: ObservableObject {
 
     func stop() {
         windowController.close()
+        if dedicatedEthernet { ethernet.stop(); isRunning = false; return }
         networkListener.stop()
         videoDecoder.reset()
         videoRenderer.flush()
@@ -269,6 +282,16 @@ struct ReceiverModeView: View {
                     .padding(.vertical, 8)
                 }
 
+                DashboardCard {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Toggle("Dedicated Ethernet (TLS, manual IP, no fallback)", isOn: $manager.dedicatedEthernet)
+                            .disabled(manager.isRunning)
+                        if manager.dedicatedEthernet {
+                            EthernetReceiverControls(receiver: manager.ethernet, manager: manager)
+                        }
+                    }
+                }
+
                 // Connected senders card
                 if manager.isRunning && !manager.networkListener.connectedClients.isEmpty {
                     DashboardCard {
@@ -317,7 +340,7 @@ struct ReceiverModeView: View {
                 }
 
                 // Manual connect
-                if manager.isRunning {
+                if manager.isRunning && !manager.dedicatedEthernet {
                     DashboardCard {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("Manual Connect")
@@ -415,6 +438,40 @@ struct ReceiverModeView: View {
             let result = ips.isEmpty ? tr("No network detected") : tr("This device: %@ : %lld", ips.joined(separator: " / "), Int(port))
             DispatchQueue.main.async {
                 cachedLocalIPs = result
+            }
+        }
+    }
+}
+
+
+struct EthernetReceiverControls: View {
+    @ObservedObject var receiver: DedicatedEthernetReceiver
+    @ObservedObject var manager: ReceiverManager
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("Local Ethernet IPv4", selection: $receiver.selectedAddress) {
+                Text("Select interface").tag("")
+                ForEach(receiver.addresses) { address in Text("\(address.name) — \(address.ip)").tag(address.id) }
+            }.disabled(manager.isRunning)
+            TextField("Windows IPv4 (same subnet)", text: $receiver.expectedPeer).disabled(manager.isRunning)
+            HStack {
+                TextField("Receiver identity .p12 path", text: $receiver.identityPath).disabled(manager.isRunning)
+                Button("Choose…") {
+                    let panel = NSOpenPanel(); panel.canChooseDirectories = false
+                    if panel.runModal() == .OK, let url = panel.url { receiver.identityPath = url.path }
+                }.disabled(manager.isRunning)
+            }
+            SecureField("Identity password (blank: read receiver.password beside .p12)", text: $receiver.identityPassword).disabled(manager.isRunning)
+            Text("Generate an identity with scripts/create-ethernet-identity.sh. Copy this SHA-256 fingerprint to Windows:").font(.caption)
+            Text(receiver.fingerprint).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+            Text(receiver.status).font(.caption)
+            Text(receiver.diagnostics).font(.system(size: 11, design: .monospaced)).textSelection(.enabled)
+            HStack {
+                Button("Show Video") { manager.showWindow() }
+                Button("Full Screen") {
+                    manager.showWindow(); manager.videoRenderer.view.window?.toggleFullScreen(nil)
+                }
+                Text("Exit: Esc or Control-Command-F").font(.caption)
             }
         }
     }

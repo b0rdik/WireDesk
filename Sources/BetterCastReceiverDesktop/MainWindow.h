@@ -199,6 +199,11 @@ private:
 
 #ifdef ENABLE_SENDER
     // Send page
+    QCheckBox* m_dedicatedEthernet = nullptr;
+    QComboBox* m_ethernetCombo = nullptr;
+    QLineEdit* m_certificatePinEdit = nullptr;
+    QComboBox* m_refreshRateCombo = nullptr;
+    void applyEthernetMode(bool enabled);
     QComboBox* m_receiverCombo = nullptr;
     QLineEdit* m_sendHostEdit = nullptr;
     uint16_t m_selectedReceiverPort = 51820;

@@ -24,6 +24,7 @@ public:
     void shutdown();
 
     bool isInitialized() const { return m_ctx != nullptr; }
+    int queuedFrames() const { return int(m_frameCount - m_outputPackets); }
     QString encoderName() const { return m_encoderName; }
 
 signals:
@@ -32,14 +33,22 @@ signals:
     void error(const QString& message);
 
 private:
+#ifdef BETTERCAST_ETHERNET_TEST
+    friend struct EncoderFramingTests;
+#endif
     bool tryEncoder(const char* codecName, int width, int height, int fps, int bitrate);
+    bool cacheParameterSets(const uint8_t* data, int size);
     QByteArray annexBtoAVCC(const uint8_t* data, int size);
+    int m_nalLengthSize = 4;
+    bool m_lengthPrefixedPackets = false;
 
     AVCodecContext* m_ctx = nullptr;
     AVFrame* m_frame = nullptr;
     AVPacket* m_pkt = nullptr;
     int64_t m_frameCount = 0;
+    int64_t m_outputPackets = 0;
     int m_fps = 30;
+    int m_bitrateMbps = 8;
     bool m_forceKeyframe = false;
     QString m_encoderName;
 

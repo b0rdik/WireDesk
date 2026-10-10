@@ -1,6 +1,8 @@
 import SwiftUI
 import AVFoundation
 import CoreMedia
+import QuartzCore
+import CoreVideo
 
 struct ReceiverVideoRendererView: NSViewRepresentable {
     let renderer: ReceiverVideoRenderer
@@ -16,6 +18,12 @@ struct ReceiverVideoRendererView: NSViewRepresentable {
 
 class ReceiverInputOverlayView: NSView {
     var onInput: ((InputEvent) -> Void)?
+    var onWindowChanged: (() -> Void)?
+    override func viewDidMoveToWindow() { super.viewDidMoveToWindow(); onWindowChanged?() }
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53, window?.styleMask.contains(.fullScreen) == true { window?.toggleFullScreen(nil); return }
+        onInput?(InputEvent(type: .keyDown, keyCode: event.keyCode))
+    }
 
     override var acceptsFirstResponder: Bool { true }
 
@@ -122,10 +130,6 @@ class ReceiverInputOverlayView: NSView {
         onInput?(InputEvent(type: .scrollWheel, keyCode: 3))
     }
 
-    override func keyDown(with event: NSEvent) {
-        onInput?(InputEvent(type: .keyDown, keyCode: event.keyCode))
-    }
-
     override func keyUp(with event: NSEvent) {
         onInput?(InputEvent(type: .keyUp, keyCode: event.keyCode))
     }
@@ -165,10 +169,82 @@ private func makeHostTimebase() -> CMTimebase? {
     return timebase
 }
 
-class ReceiverVideoRenderer: ObservableObject {
+class ReceiverVideoRenderer: NSObject, ObservableObject {
     let view = ReceiverInputOverlayView()
     private var displayLayer = AVSampleBufferDisplayLayer()
     @Published var videoSize: CGSize = .zero
+    private let frameLock = NSLock()
+    private var pendingFrame: CMSampleBuffer?
+    private var discarded = 0
+    private var submitted = 0
+    private var fallbackLink: CVDisplayLink?
+    private var nativeLink: AnyObject?
+    private var queuedTick = false
+    private var screenObserver: NSObjectProtocol?
+    private(set) var screenMaxFPS = 0
+    private(set) var screenDescription = "Screen refresh: no data"
+    var pendingDepth: Int { frameLock.lock(); defer { frameLock.unlock() }; return pendingFrame == nil ? 0 : 1 }
+    var droppedFrames: Int { frameLock.lock(); defer { frameLock.unlock() }; return discarded }
+
+    /// A single decoded-frame mailbox. Dropping here preserves compressed reference correctness.
+    func offer(_ frame: CMSampleBuffer) {
+        frameLock.lock()
+        if pendingFrame != nil { discarded += 1 }
+        pendingFrame = frame
+        frameLock.unlock()
+    }
+    func takeSubmittedFPS(interval: Double) -> Double {
+        let value = Double(submitted) / interval; submitted = 0; return value
+    }
+    @objc private func presentTick() {
+        frameLock.lock(); queuedTick = false
+        let frame = pendingFrame; pendingFrame = nil
+        frameLock.unlock()
+        updateScreenInfo()
+        guard let frame else { return } // repeated scanout is never counted as a new video frame
+        if !displayLayer.isReadyForMoreMediaData { displayLayer.flush() }
+        enqueue(frame); submitted += 1
+    }
+    private func scheduleTick() {
+        frameLock.lock()
+        guard !queuedTick else { frameLock.unlock(); return }
+        queuedTick = true; frameLock.unlock()
+        DispatchQueue.main.async { [weak self] in self?.presentTick() }
+    }
+    private func updateScreenInfo() {
+        guard let screen = view.window?.screen else { screenMaxFPS = 0; screenDescription = "Screen refresh: no data"; return }
+        if #available(macOS 12, *) {
+            screenMaxFPS = screen.maximumFramesPerSecond
+            screenDescription = "\(screen.localizedName): maximum \(screenMaxFPS) Hz; ProMotion instantaneous scanout: no data"
+        } else {
+            screenMaxFPS = 0
+            screenDescription = "\(screen.localizedName): maximum refresh and instantaneous scanout: no data"
+        }
+    }
+    private func configureDisplayLink() {
+        if let link = fallbackLink { CVDisplayLinkStop(link); fallbackLink = nil }
+        if #available(macOS 14, *), let link = nativeLink as? CADisplayLink { link.invalidate() }
+        nativeLink = nil
+        updateScreenInfo()
+        guard let window = view.window else { return }
+        if #available(macOS 14, *) {
+            let link = view.displayLink(target: self, selector: #selector(presentTick))
+            let maximum = Float(max(1, min(120, screenMaxFPS)))
+            link.preferredFrameRateRange = CAFrameRateRange(minimum: min(30, maximum), maximum: maximum, preferred: maximum)
+            link.add(to: .main, forMode: .common)
+            nativeLink = link
+        } else {
+            var link: CVDisplayLink?
+            let display = window.screen?.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? CGMainDisplayID()
+            guard CVDisplayLinkCreateWithCGDisplay(display, &link) == kCVReturnSuccess, let link else { return }
+            CVDisplayLinkSetOutputCallback(link, { _, _, _, _, _, context in
+                guard let context else { return kCVReturnError }
+                Unmanaged<ReceiverVideoRenderer>.fromOpaque(context).takeUnretainedValue().scheduleTick()
+                return kCVReturnSuccess
+            }, Unmanaged.passUnretained(self).toOpaque())
+            fallbackLink = link; CVDisplayLinkStart(link)
+        }
+    }
 
     var onInput: ((InputEvent) -> Void)? {
         didSet {
@@ -176,7 +252,13 @@ class ReceiverVideoRenderer: ObservableObject {
         }
     }
 
-    init() {
+    override init() {
+        super.init()
+        view.onWindowChanged = { [weak self] in self?.configureDisplayLink() }
+        screenObserver = NotificationCenter.default.addObserver(forName: NSWindow.didChangeScreenNotification, object: nil, queue: .main) { [weak self] note in
+            guard let self, (note.object as? NSWindow) === self.view.window else { return }
+            self.configureDisplayLink()
+        }
         view.wantsLayer = true
         view.layer = CALayer()
         view.layer?.backgroundColor = NSColor.black.cgColor
@@ -192,6 +274,11 @@ class ReceiverVideoRenderer: ObservableObject {
         view.layer?.addSublayer(displayLayer)
     }
 
+    deinit {
+        if let screenObserver { NotificationCenter.default.removeObserver(screenObserver) }
+        if let link = fallbackLink { CVDisplayLinkStop(link) }
+        if #available(macOS 14, *), let link = nativeLink as? CADisplayLink { link.invalidate() }
+    }
     func layout() {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -230,6 +317,7 @@ class ReceiverVideoRenderer: ObservableObject {
 
     /// Flush the display layer in preparation for a format/dimension change.
     func flushForFormatChange() {
+        frameLock.lock(); pendingFrame = nil; frameLock.unlock()
         displayLayer.flush()
     }
 
@@ -254,6 +342,7 @@ class ReceiverVideoRenderer: ObservableObject {
     }
 
     func flush() {
+        frameLock.lock(); pendingFrame = nil; frameLock.unlock()
         displayLayer.flush()
         DispatchQueue.main.async {
             self.videoSize = .zero

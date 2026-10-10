@@ -33,6 +33,7 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <thread>
+#include <QSettings>
 
 // ─── Dark theme stylesheet ─────────────────────────────────────────────────────
 
@@ -240,7 +241,7 @@ MainWindow::MainWindow(QWidget* parent)
         LogManager::instance().log("Sender: " + status);
     });
     connect(m_sender, &SenderController::error, this, [this](const QString& msg) {
-        if (m_senderStatusLabel) m_senderStatusLabel->setText("Error: " + msg);
+        QTimer::singleShot(0, this, [this, msg] { if (m_senderStatusLabel) m_senderStatusLabel->setText("Error: " + msg); });
         LogManager::instance().log("Sender error: " + msg);
     });
     connect(m_sender, &SenderController::connected, this, [this]() {
@@ -251,6 +252,12 @@ MainWindow::MainWindow(QWidget* parent)
         if (m_sendBtn) m_sendBtn->setEnabled(true);
         if (m_stopSendBtn) m_stopSendBtn->setEnabled(false);
         if (m_sendHostEdit) m_sendHostEdit->setEnabled(true);
+        if (m_dedicatedEthernet) m_dedicatedEthernet->setEnabled(true);
+        if (m_ethernetCombo) m_ethernetCombo->setEnabled(true);
+        if (m_certificatePinEdit) m_certificatePinEdit->setEnabled(true);
+        if (m_fpsSpinBox) m_fpsSpinBox->setEnabled(true);
+        if (m_bitrateSpinBox) m_bitrateSpinBox->setEnabled(true);
+        if (m_monitorCombo) m_monitorCombo->setEnabled(true);
     });
 
     // mDNS browsing for receiver discovery
@@ -316,8 +323,16 @@ MainWindow::MainWindow(QWidget* parent)
     setupUi();
 
     // Start services
+#ifdef ENABLE_SENDER
+    if (!m_dedicatedEthernet->isChecked()) m_network->start();
+#else
     m_network->start();
+#endif
     uint16_t actualPort = m_network->actualTcpPort();
+#ifdef ENABLE_SENDER
+    if (m_dedicatedEthernet->isChecked()) { applyEthernetMode(true); }
+    else {
+#endif
     m_discovery->startAdvertising(actualPort);
 #ifdef ENABLE_SENDER
     m_discovery->startBrowsing();
@@ -328,17 +343,11 @@ MainWindow::MainWindow(QWidget* parent)
     if (uint16_t invitePort = m_inviteListener->start()) {
         m_discovery->advertiseSenderService(invitePort);
     }
+    }
 #endif
     LogManager::instance().log(QString("BetterCast started — listening on port %1").arg(actualPort));
 #ifdef _WIN32
-    QByteArray fwStatus = qgetenv("BETTERCAST_FW_STATUS");
-    if (fwStatus == "ok") {
-        LogManager::instance().log("Firewall: Rules added (mDNS + TCP)");
-    } else if (fwStatus == "failed") {
-        LogManager::instance().log("Firewall: Rules NOT added — run as Administrator once for auto-discovery");
-    } else {
-        LogManager::instance().log("Firewall: Rules already exist");
-    }
+    LogManager::instance().log("Firewall: not modified by application; configure explicit scoped rules if needed (docs/ethernet-second-display.md)");
 #endif
 
     // Default window size (landscape 16:9, 70% screen)
@@ -555,7 +564,7 @@ void MainWindow::setupSendPage() {
     } else {
         m_vddStatusLabel->setText(
             "Virtual Display Driver not found — install from "
-            "github.com/itsmikethetech/Virtual-Display-Driver");
+            "github.com/VirtualDrivers/Virtual-Display-Driver");
         m_vddStatusLabel->setStyleSheet("font-size: 12px; color: #ff9800;");
     }
     m_vddStatusLabel->setWordWrap(true);
@@ -593,16 +602,23 @@ void MainWindow::setupSendPage() {
     resRow->addWidget(resLabel);
 
     m_vddResolutionCombo = new QComboBox();
-    m_vddResolutionCombo->addItem("1920 x 1080 @ 60Hz", QVariant::fromValue(QSize(1920, 1080)));
-    m_vddResolutionCombo->addItem("2560 x 1440 @ 60Hz", QVariant::fromValue(QSize(2560, 1440)));
-    m_vddResolutionCombo->addItem("3840 x 2160 @ 60Hz", QVariant::fromValue(QSize(3840, 2160)));
-    m_vddResolutionCombo->addItem("1920 x 1200 @ 60Hz", QVariant::fromValue(QSize(1920, 1200)));
-    m_vddResolutionCombo->addItem("2560 x 1600 @ 60Hz", QVariant::fromValue(QSize(2560, 1600)));
-    m_vddResolutionCombo->addItem("1280 x 720 @ 60Hz",  QVariant::fromValue(QSize(1280, 720)));
-    m_vddResolutionCombo->addItem("1024 x 768 @ 60Hz",  QVariant::fromValue(QSize(1024, 768)));
+    m_vddResolutionCombo->addItem("1920 x 1080", QVariant::fromValue(QSize(1920, 1080)));
+    m_vddResolutionCombo->addItem("2560 x 1440", QVariant::fromValue(QSize(2560, 1440)));
+    m_vddResolutionCombo->addItem("3840 x 2160", QVariant::fromValue(QSize(3840, 2160)));
+    m_vddResolutionCombo->addItem("1920 x 1200", QVariant::fromValue(QSize(1920, 1200)));
+    m_vddResolutionCombo->addItem("2560 x 1600", QVariant::fromValue(QSize(2560, 1600)));
+    m_vddResolutionCombo->addItem("1280 x 720",  QVariant::fromValue(QSize(1280, 720)));
+    m_vddResolutionCombo->addItem("1024 x 768",  QVariant::fromValue(QSize(1024, 768)));
     m_vddResolutionCombo->setFixedWidth(240);
     m_vddResolutionCombo->setEnabled(vddInstalled);
     resRow->addWidget(m_vddResolutionCombo);
+    m_refreshRateCombo = new QComboBox();
+    m_refreshRateCombo->addItem("60 Hz", 60); m_refreshRateCombo->addItem("120 Hz", 120);
+    QSettings displaySettings;
+    m_refreshRateCombo->setCurrentIndex(displaySettings.value("sender/virtualHz", 60).toInt() == 120 ? 1 : 0);
+    const QSize savedResolution(displaySettings.value("sender/virtualWidth", 1920).toInt(), displaySettings.value("sender/virtualHeight", 1080).toInt());
+    for (int i = 0; i < m_vddResolutionCombo->count(); ++i) if (m_vddResolutionCombo->itemData(i).toSize() == savedResolution) m_vddResolutionCombo->setCurrentIndex(i);
+    resRow->addWidget(m_refreshRateCombo);
     resRow->addStretch();
     vddLayout->addLayout(resRow);
 
@@ -610,7 +626,7 @@ void MainWindow::setupSendPage() {
     auto* vddBtnRow = new QHBoxLayout();
     vddBtnRow->setSpacing(10);
 
-    m_createVddBtn = new QPushButton("Create Virtual Display");
+    m_createVddBtn = new QPushButton("Use Installed Virtual Display");
     m_createVddBtn->setEnabled(vddInstalled);
     m_createVddBtn->setStyleSheet(
         "QPushButton { background-color: #4caf50; color: white; font-weight: bold; "
@@ -712,6 +728,28 @@ void MainWindow::setupSendPage() {
     hostRow->addWidget(m_sendHostEdit);
     hostRow->addStretch();
     connLayout->addLayout(hostRow);
+    QSettings saved;
+    m_dedicatedEthernet = new QCheckBox("Dedicated Ethernet (TLS, manual IPv4, no discovery/fallback)");
+    m_dedicatedEthernet->setChecked(saved.value("ethernet/enabled", false).toBool());
+    connLayout->addWidget(m_dedicatedEthernet);
+    m_ethernetCombo = new QComboBox();
+    for (const auto& iface : QNetworkInterface::allInterfaces()) {
+        if (iface.type() != QNetworkInterface::Ethernet) continue;
+        for (const auto& entry : iface.addressEntries()) {
+            if (entry.ip().protocol() != QAbstractSocket::IPv4Protocol) continue;
+            QVariantMap data; data["name"] = iface.name(); data["ip"] = entry.ip().toString();
+            m_ethernetCombo->addItem(QString("%1 — %2").arg(iface.humanReadableName(), entry.ip().toString()), data);
+            if (saved.value("ethernet/interface").toString() == iface.name() && saved.value("ethernet/localIP").toString() == entry.ip().toString())
+                m_ethernetCombo->setCurrentIndex(m_ethernetCombo->count() - 1);
+        }
+    }
+    connLayout->addWidget(new QLabel("Local Ethernet interface/IP (restart app to refresh addresses):"));
+    connLayout->addWidget(m_ethernetCombo);
+    m_certificatePinEdit = new QLineEdit(saved.value("ethernet/pin").toString());
+    m_certificatePinEdit->setPlaceholderText("Mac certificate SHA-256 fingerprint (64 hex characters)");
+    connLayout->addWidget(m_certificatePinEdit);
+    m_sendHostEdit->setText(saved.value("sender/host").toString());
+    connect(m_dedicatedEthernet, &QCheckBox::toggled, this, &MainWindow::applyEthernetMode);
 
     layout->addWidget(connCard);
 
@@ -725,8 +763,9 @@ void MainWindow::setupSendPage() {
     fpsLabel->setStyleSheet("font-size: 13px; color: #ccc;");
     fpsRow->addWidget(fpsLabel);
     m_fpsSpinBox = new QSpinBox();
-    m_fpsSpinBox->setRange(15, 120);
-    m_fpsSpinBox->setValue(60);
+    m_fpsSpinBox->setRange(60, 120);
+    m_fpsSpinBox->setSingleStep(60);
+    m_fpsSpinBox->setValue(saved.value("sender/fps", 60).toInt());
     m_fpsSpinBox->setSuffix(" FPS");
     m_fpsSpinBox->setFixedWidth(100);
     fpsRow->addWidget(m_fpsSpinBox);
@@ -739,7 +778,7 @@ void MainWindow::setupSendPage() {
     brRow->addWidget(brLabel);
     m_bitrateSpinBox = new QSpinBox();
     m_bitrateSpinBox->setRange(2, 100);
-    m_bitrateSpinBox->setValue(20);
+    m_bitrateSpinBox->setValue(saved.value("sender/bitrate", 20).toInt());
     m_bitrateSpinBox->setSuffix(" Mbps");
     m_bitrateSpinBox->setFixedWidth(100);
     brRow->addWidget(m_bitrateSpinBox);
@@ -1252,6 +1291,31 @@ void MainWindow::onSendScreenClicked() {
                                        .arg(adapterIdx).arg(outputIdx));
     }
 
+    const int requestedFPS = m_fpsSpinBox->value();
+    if (requestedFPS != 60 && requestedFPS != 120) {
+        m_senderStatusLabel->setText("Choose 60 or 120 FPS"); return;
+    }
+    EthernetConfig config;
+    config.enabled = m_dedicatedEthernet->isChecked();
+    if (config.enabled) {
+        const auto data = m_ethernetCombo->currentData().toMap();
+        config.interfaceName = data.value("name").toString();
+        config.localIP = data.value("ip").toString();
+        config.certificateSHA256 = m_certificatePinEdit->text().trimmed();
+        m_selectedReceiverPort = 51820;
+    }
+    m_sender->setEthernetConfig(config);
+    QSettings saved;
+    saved.setValue("ethernet/enabled", config.enabled);
+    saved.setValue("ethernet/interface", config.interfaceName);
+    saved.setValue("ethernet/localIP", config.localIP);
+    saved.setValue("ethernet/pin", config.certificateSHA256);
+    saved.setValue("sender/host", host);
+    saved.setValue("sender/fps", requestedFPS);
+    saved.setValue("sender/bitrate", m_bitrateSpinBox->value());
+    saved.setValue("sender/display", m_monitorCombo->currentData().toMap().value("displayName"));
+    m_dedicatedEthernet->setEnabled(false); m_ethernetCombo->setEnabled(false);
+    m_certificatePinEdit->setEnabled(false); m_monitorCombo->setEnabled(false);
     m_sendBtn->setEnabled(false);
     m_stopSendBtn->setEnabled(true);
     m_sendHostEdit->setEnabled(false);
@@ -1264,7 +1328,7 @@ void MainWindow::onSendScreenClicked() {
     int bitrate = m_bitrateSpinBox->value();
     LogManager::instance().log(QString("Starting sender to %1 at %2 FPS, %3 Mbps")
                                    .arg(host).arg(fps).arg(bitrate));
-    m_sender->startSending(host, m_selectedReceiverPort, fps, bitrate);
+    if (!m_sender->startSending(host, m_selectedReceiverPort, fps, bitrate)) onStopSendingClicked();
 }
 
 void MainWindow::onCreateVirtualDisplay() {
@@ -1279,54 +1343,25 @@ void MainWindow::onCreateVirtualDisplay() {
     m_vddStatusLabel->setStyleSheet("font-size: 12px; color: #4da6ff;");
     LogManager::instance().log(QString("Creating virtual display %1x%2...").arg(w).arg(h));
 
-    // Run in background thread to avoid blocking UI
-    std::thread([this, w, h]() {
-        bool ok = m_sender->vdd()->createVirtualDisplay(w, h, 60);
-        QMetaObject::invokeMethod(this, [this, ok, w, h]() {
-            m_createVddBtn->setEnabled(true);
-            if (ok) {
-                m_removeVddBtn->setEnabled(true);
-                m_vddStatusLabel->setText(QString("Virtual display active: %1x%2").arg(w).arg(h));
-                m_vddStatusLabel->setStyleSheet("font-size: 13px; color: #4caf50;");
-                LogManager::instance().log("Virtual display created successfully");
-                // Refresh monitor list to include the new display
-                onRefreshMonitors();
-                // Auto-select the virtual display
-                for (int i = 0; i < m_monitorCombo->count(); i++) {
-                    QVariantMap data = m_monitorCombo->itemData(i).toMap();
-                    if (data.value("virtual", false).toBool()) {
-                        m_monitorCombo->setCurrentIndex(i);
-                        break;
-                    }
-                }
-            } else {
-                m_vddStatusLabel->setText("Failed to create virtual display — check logs");
-                m_vddStatusLabel->setStyleSheet("font-size: 12px; color: #d32f2f;");
-            }
-        });
-    }).detach();
+    const int hz = m_refreshRateCombo->currentData().toInt();
+    QSettings settings; settings.setValue("sender/virtualHz", hz);
+    settings.setValue("sender/virtualWidth", w); settings.setValue("sender/virtualHeight", h);
+    const bool ok = m_sender->vdd()->createVirtualDisplay(w, h, hz);
+    m_createVddBtn->setEnabled(true);
+    m_vddStatusLabel->setText(ok ? QString("Verified virtual display %1×%2 @ %3 Hz").arg(w).arg(h).arg(hz)
+                                : "Virtual mode unavailable; install/configure one VDD monitor and extend it in Windows Settings. See logs.");
+    if (ok) {
+        onRefreshMonitors();
+        for (int i = 0; i < m_monitorCombo->count(); ++i) {
+            if (m_monitorCombo->itemData(i).toMap().value("virtual").toBool()) { m_monitorCombo->setCurrentIndex(i); break; }
+        }
+    }
 }
 
 void MainWindow::onRemoveVirtualDisplay() {
     if (!m_sender || !m_sender->vdd()) return;
 
-    m_removeVddBtn->setEnabled(false);
-    LogManager::instance().log("Removing virtual display...");
-
-    std::thread([this]() {
-        bool ok = m_sender->vdd()->removeAllVirtualDisplays();
-        QMetaObject::invokeMethod(this, [this, ok]() {
-            if (ok) {
-                m_vddStatusLabel->setText("Virtual display removed");
-                m_vddStatusLabel->setStyleSheet("font-size: 12px; color: #888;");
-                LogManager::instance().log("Virtual display removed");
-            } else {
-                m_removeVddBtn->setEnabled(true);
-                LogManager::instance().log("Failed to remove virtual display");
-            }
-            onRefreshMonitors();
-        });
-    }).detach();
+    m_vddStatusLabel->setText("The installed VDD monitor is reused. Disable/remove it explicitly in Windows Display Settings or the VDD installer; BetterCast does not remove other applications' monitors.");
 }
 
 void MainWindow::onRefreshMonitors() {
@@ -1362,6 +1397,9 @@ void MainWindow::onRefreshMonitors() {
         m_monitorCombo->addItem(label, data);
     }
 
+    const auto selected = QSettings().value("sender/display").toString();
+    for (int i = 0; i < m_monitorCombo->count(); ++i)
+        if (m_monitorCombo->itemData(i).toMap().value("displayName").toString() == selected) m_monitorCombo->setCurrentIndex(i);
     LogManager::instance().log(QString("Found %1 monitor(s)").arg(monitors.size()));
 }
 
@@ -1376,6 +1414,9 @@ void MainWindow::onMonitorSelected(int index) {
 
 void MainWindow::onStopSendingClicked() {
     m_sender->stopSending();
+    m_sendBtn->setEnabled(true); m_stopSendBtn->setEnabled(false); m_sendHostEdit->setEnabled(true);
+    m_dedicatedEthernet->setEnabled(true); m_ethernetCombo->setEnabled(true);
+    m_certificatePinEdit->setEnabled(true); m_monitorCombo->setEnabled(true);
     m_senderStatusLabel->setText("Sender stopped");
     m_senderStatusLabel->setStyleSheet("font-size: 12px; color: #888;");
     m_fpsSpinBox->setEnabled(true);
@@ -1384,6 +1425,7 @@ void MainWindow::onStopSendingClicked() {
 }
 
 void MainWindow::onReceiverDiscovered(const DiscoveredService& service) {
+    if (m_dedicatedEthernet && m_dedicatedEthernet->isChecked()) return;
     if (!m_receiverCombo) return;
 
     // Remove the "Searching..." placeholder on first discovery
@@ -1436,6 +1478,7 @@ void MainWindow::onReceiverSelected(int index) {
 }
 
 void MainWindow::onInviteReceived(const QString& deviceName, const QString& peerAddress) {
+    if (m_dedicatedEthernet && m_dedicatedEthernet->isChecked()) return;
     if (!m_sender || !m_sendHostEdit) return;
 
     // Already streaming — an invite is not a reason to tear down the current session.
@@ -1561,3 +1604,19 @@ void MainWindow::updateLocalIpDisplay() {
     if (m_overviewIpLabel) m_overviewIpLabel->setText(text);
     if (m_recvIpLabel) m_recvIpLabel->setText(text);
 }
+
+#ifdef ENABLE_SENDER
+void MainWindow::applyEthernetMode(bool enabled) {
+    QSettings().setValue("ethernet/enabled", enabled);
+    if (enabled) {
+        m_discovery->stopBrowsing(); m_discovery->stopAdvertising(); m_discovery->stopAdvertisingSenderService();
+        m_inviteListener->stop(); m_network->stop();
+        m_connectBtn->setEnabled(false); m_adbBtn->setEnabled(false);
+        m_receiverCombo->clear(); m_receiverCombo->addItem("Discovery disabled; enter Mac IPv4"); m_receiverCombo->setEnabled(false);
+    } else {
+        m_network->start(); m_connectBtn->setEnabled(true); m_adbBtn->setEnabled(true);
+        m_discovery->startAdvertising(m_network->actualTcpPort()); m_discovery->startBrowsing();
+        if (auto port = m_inviteListener->start()) m_discovery->advertiseSenderService(port);
+    }
+}
+#endif

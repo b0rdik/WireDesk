@@ -1,0 +1,20 @@
+[1/6] Automatic MOC and UIC for target BetterCastReceiver
+[2/6] Building CXX object CMakeFiles/BetterCastReceiver.dir/sender/VideoEncoderFF.cpp.o
+[3/6] Building CXX object CMakeFiles/BetterCastReceiver.dir/sender/SenderController.cpp.o
+[4/6] Building CXX object CMakeFiles/BetterCastReceiver.dir/BetterCastReceiver_autogen/mocs_compilation.cpp.o
+In file included from /Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/work/qt-sender-build/BetterCastReceiver_autogen/mocs_compilation.cpp:6:
+In file included from /Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/work/qt-sender-build/BetterCastReceiver_autogen/EWIEGA46WW/moc_MainWindow.cpp:9:
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/work/qt-sender-build/BetterCastReceiver_autogen/EWIEGA46WW/../../../../outputs/BetterCast/Sources/BetterCastReceiverDesktop/MainWindow.h:71:9: warning: ignoring return value of function declared with 'nodiscard' attribute [-Wunused-result]
+   71 |         m_logFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text);
+      |         ^~~~~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1 warning generated.
+[5/6] Building CXX object CMakeFiles/BetterCastReceiver.dir/MainWindow.cpp.o
+In file included from /Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastReceiverDesktop/MainWindow.cpp:1:
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastReceiverDesktop/MainWindow.h:71:9: warning: ignoring return value of function declared with 'nodiscard' attribute [-Wunused-result]
+   71 |         m_logFile.open(QIODevice::WriteOnly | QIODevice::Truncate | QIODevice::Text);
+      |         ^~~~~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+/Users/boserov/Documents/Codex/2026-10-10/files-pasted-by-the-user-bettercast/outputs/BetterCast/Sources/BetterCastReceiverDesktop/MainWindow.cpp:221:5: warning: ignoring return value of function declared with 'nodiscard' attribute [-Wunused-result]
+  221 |     marker.open(QIODevice::WriteOnly);
+      |     ^~~~~~~~~~~ ~~~~~~~~~~~~~~~~~~~~
+2 warnings generated.
+[6/6] Linking CXX executable BetterCastReceiver

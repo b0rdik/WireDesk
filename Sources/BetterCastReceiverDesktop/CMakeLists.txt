@@ -35,7 +35,9 @@ find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network OpenGLWidgets Mult
 set(FFMPEG_FOUND FALSE)
 
 # Method 1: vcpkg provides FFmpeg as a single package
-find_package(FFMPEG QUIET)
+if(WIN32)
+    find_package(FFMPEG QUIET)
+endif()
 if(FFMPEG_FOUND)
     message(STATUS "FFmpeg found via find_package (vcpkg)")
     message(STATUS "  FFMPEG_INCLUDE_DIRS: ${FFMPEG_INCLUDE_DIRS}")
@@ -141,6 +143,7 @@ if(ENABLE_SENDER)
         sender/NetworkSender.cpp
         sender/SenderController.cpp
         sender/InviteListener.cpp
+        sender/VirtualDisplayVDD.cpp
     )
     list(APPEND HEADERS
         sender/ScreenCapture.h
@@ -148,15 +151,14 @@ if(ENABLE_SENDER)
         sender/NetworkSender.h
         sender/SenderController.h
         sender/InviteListener.h
+        sender/VirtualDisplayVDD.h
     )
     if(WIN32)
         list(APPEND SOURCES
             sender/ScreenCaptureWin.cpp
-            sender/VirtualDisplayVDD.cpp
         )
         list(APPEND HEADERS
             sender/ScreenCaptureWin.h
-            sender/VirtualDisplayVDD.h
         )
     endif()
     # TODO: Linux PipeWire capture
@@ -226,7 +228,10 @@ endif()
 
 # Windows-specific settings
 if(WIN32)
-    target_link_libraries(BetterCastReceiver PRIVATE ws2_32)
+    # TCP_INFO_v0 is declared by Windows SDK for Windows 10 RS2 and newer.
+    target_compile_definitions(BetterCastReceiver PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN
+        WINVER=0x0A00 _WIN32_WINNT=0x0A00 NTDDI_VERSION=0x0A000003)
+    target_link_libraries(BetterCastReceiver PRIVATE ws2_32 gdi32)
     set_target_properties(BetterCastReceiver PROPERTIES WIN32_EXECUTABLE TRUE)
 endif()
 

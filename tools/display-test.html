@@ -1,0 +1,20 @@
+<!doctype html><meta charset="utf-8"><title>BetterCast motion / text test</title>
+<style>html,body{margin:0;background:#101318;color:white;font:24px system-ui;overflow:hidden}canvas{width:100vw;height:100vh;display:block}button{position:fixed;right:20px;top:20px;font:18px system-ui}</style>
+<canvas id="test"></canvas><button onclick="document.documentElement.requestFullscreen()">Full screen</button>
+<script>
+const canvas=document.getElementById('test'), ctx=canvas.getContext('2d');
+let count=0, last=performance.now(), fps=0, sampled=0, previous=last;
+function draw(now){
+ const scale=devicePixelRatio; if(canvas.width!==innerWidth*scale||canvas.height!==innerHeight*scale){canvas.width=innerWidth*scale;canvas.height=innerHeight*scale;}
+ ctx.setTransform(scale,0,0,scale,0,0); const w=innerWidth,h=innerHeight;
+ ctx.fillStyle='#101318';ctx.fillRect(0,0,w,h);
+ const x=((now*0.5)%(w+200))-200;
+ for(let i=0;i<8;i++){ctx.fillStyle=['#ff4040','#40ff40','#4080ff','#fff'][i%4];ctx.fillRect(x+i*22,h*.45,10,h*.5);}
+ count++;sampled++;if(now-last>=1000){fps=sampled*1000/(now-last);sampled=0;last=now;}
+ ctx.font='48px ui-monospace,monospace';ctx.fillStyle='#fff';ctx.fillText(String(Date.now())+' ms · frame '+count,30,75);
+ ctx.font='24px ui-monospace,monospace';ctx.fillText('Source browser RAF: '+fps.toFixed(1)+' FPS · interval '+(now-previous).toFixed(2)+'ms',30,120);
+ ctx.fillText('This source counter does not measure receiver FPS or end-to-end latency.',30,160);
+ ['#fff','#ff5050','#50ff50','#5080ff'].forEach((color,i)=>{ctx.fillStyle=color;ctx.font=(12+i*4)+'px system-ui';ctx.fillText('Текст / Windows scale · AaBb 0123456789 — ClearType цветные границы',30,205+i*35);});
+ previous=now;requestAnimationFrame(draw);
+}requestAnimationFrame(draw);
+</script>

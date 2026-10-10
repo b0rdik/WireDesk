@@ -7,6 +7,8 @@
 #include <QTimer>
 #include <QString>
 #include <atomic>
+#include <QElapsedTimer>
+struct SwsContext;
 
 // Forward declarations — avoid pulling Windows headers into every TU
 struct ID3D11Device;
@@ -43,6 +45,9 @@ private:
     void captureFrame();
     void captureFrameGdi();
     void cleanup();
+    void overlayCursor(QByteArray& nv12, const uint8_t* bgra, int pitch);
+    QByteArray convertBGRA(const uint8_t* data, int pitch);
+    void scheduleNext();
 
     // D3D11 objects
     ID3D11Device* m_device = nullptr;
@@ -54,8 +59,21 @@ private:
     HDC m_gdiDC = nullptr;
     HDC m_memDC = nullptr;
     HBITMAP m_bitmap = nullptr;
+    HBITMAP m_originalBitmap = nullptr;
     bool m_useGdiFallback = false;
+    bool m_overlayPointer = false;
 
+    SwsContext* m_sws = nullptr;
+    SwsContext* m_cursorSws = nullptr;
+    HDC m_cursorDC = nullptr;
+    HBITMAP m_cursorBitmap = nullptr;
+    HBITMAP m_cursorOriginalBitmap = nullptr;
+    void* m_cursorBits = nullptr;
+    QSize m_cursorSize;
+    int m_originX = 0, m_originY = 0;
+    QByteArray m_previousNV12;
+    QElapsedTimer m_clock;
+    qint64 m_tick = 0;
     QTimer m_timer;
     int m_targetFPS;
     int m_adapterIndex = 0;

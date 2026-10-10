@@ -1,0 +1,186 @@
+# BetterCast: Windows → выделенный Ethernet → Mac
+
+Изменения основаны на upstream `7bc5667966906a608fe5fb8825e16ce822aa4cd4`. Код и локальное Mac-приложение подготовлены. Полноценный второй монитор на двух устройствах **пока не подтверждён**: Windows-сборка, загрузка подписанного драйвера, физический Ethernet и вывод 120 новых кадров/с требуют проверки на Windows-ПК и MacBook. Результаты выполненных тестов — в [validation/ethernet-results.md](validation/ethernet-results.md).
+
+## Аудит и выбранная архитектура
+
+`AGENTS.md` в checkout и применимых родительских каталогах не найден. Прочитаны README, Package.swift, BUILD.md, Windows CI, исходники захвата/кодера/транспорта/VDD и обоих Swift-приёмников. README не использован как подтверждение работоспособности.
+
+| Участок | Реальный код и состояние |
+|---|---|
+| Windows Sender | `Sources/BetterCastReceiverDesktop/sender/`, включается `ENABLE_SENDER=ON`; исходники в этом же GPL-3.0 репозитории |
+| Windows виртуальный дисплей | Внешний MIT VDD. Upstream CI закрепляет VirtualDrivers/Virtual-Display-Driver 25.7.23 |
+| Захват Windows | DXGI Desktop Duplication; именованный GDI fallback для IDD, который не поддерживает DuplicateOutput |
+| Windows кодер | FFmpeg, проба NVENC → AMF → QSV → VAAPI → libx264; запуск кодера, а не наличие имени, определяет доступность |
+| macOS приёмник в основном приложении | `ReceiverMode.swift`, `ReceiverNetworkListener.swift`, `ReceiverVideoDecoder.swift`, `ReceiverVideoRenderer.swift` |
+| Отдельный старый Swift Receiver | Другой executable `BetterCastReceiver`; новые выделенные настройки находятся **в основном BetterCastSender/BetterCast.app** |
+| Старый транспорт | TCP и UDP, Bonjour/AWDL, без аутентификации в проверенных обработчиках |
+| Новый выделенный транспорт | Один TLS/TCP-сеанс на порту 51820; видео и управление в одном сокете, ручные IPv4, версия протокола 1; без UDP/mDNS/STUN/TURN |
+| macOS вывод | Существующий AVSampleBufferDisplayLayer; новый слот последнего декодированного кадра, NSView CADisplayLink на macOS 14+, CVDisplayLink на 13 |
+
+Краткий план реализован небольшими изменениями: Ethernet/TLS и восстановление; переиспользование установленного VDD; диагностика; дробный такт 60/120, аппаратный кодер для 120 и вывод по экрану; ограничение очередей; настройки; проверка и документация. Полной замены стека нет.
+
+Аудит исходников **закреплённого VDD** обнаружил, что старый BetterCast использовал несуществующие JSON `add/remove` в `VDDPipe` и несовместимый XML `VirtualDisplaySettings`. В VDD 25.7.23 канал называется `MTTVirtualDisplayPipe` и принимает другие UTF-16 команды; мониторы создаются при инициализации драйвера по `<monitors><count>`. Новая интеграция не обращается к вымышленному API, не переписывает настройки драйвера, не создаёт дополнительные device nodes и не удаляет чужие мониторы. Она переиспользует один установленный монитор, перечисляет режимы Windows, проверяет режим через Windows API и исключает clone topology. Изменение режима откатывается, если проверка не проходит.
+
+Первичный источник: [VDD 25.7.23 Driver.cpp](https://github.com/VirtualDrivers/Virtual-Display-Driver/blob/25.7.23/Virtual%20Display%20Driver%20(HDR)/MttVDD/Driver.cpp), [настройки этой версии](https://github.com/VirtualDrivers/Virtual-Display-Driver/blob/25.7.23/Virtual%20Display%20Driver%20(HDR)/vdd_settings.xml), [MIT license](https://github.com/VirtualDrivers/Virtual-Display-Driver/blob/25.7.23/LICENSE).
+
+## Что изменено в тракте
+
+- Windows: выбор Ethernet/IP и Mac IPv4; `bind()` + `IP_UNICAST_IF`, проверка Ethernet, активности, принадлежности адреса и общей подсети; фактические socket endpoints; никакого перехода на другой адрес/интерфейс при ошибке.
+- Mac: `NWParameters.requiredInterface` и `requiredLocalEndpoint`, проверка фактического пути/IP, один подтверждённый отправитель, повторное ожидание того же соединения. Listener не выбирает запасной порт.
+- В выделенном режиме обнаружение отключено. Windows также выключает общий TCP/UDP receiver и приглашения; Mac останавливает sender browsing/invites/сеансы. Общие функции доступны после выхода из выделенного режима.
+- Сертификат Mac проверяется Windows по SHA-256, перенесённому вручную. Первый сеанс от разрешённого IP подтверждается на Mac; краткие обрывы в том же запуске не требуют нового подтверждения. Обратный ввод и звук в выделенном режиме отключены.
+- Абсолютные монотонные сроки захвата учитывают 8,333… мс. Просроченные такты пропускаются; нет серии запоздалых захватов. DXGI не создаёт видеокадр без обновления; одинаковые GDI кадры не кодируются повторно.
+- Скалярное BGRA→NV12 заменено на существующий FFmpeg swscale. Указан BT.709 limited range; добавлено наложение курсора Windows для отдельного указателя. Захват остаётся с CPU readback/upload: это **не zero-copy**, нагрузка Windows не измерена.
+- H.264 без B-frames; lookahead/очереди уменьшаются доступными настройками кодера, VBV — целевой объём двух кадров, GOP — одна секунда. Неподдерживаемые опции видны в логах. 120 FPS не переходит молча на libx264; при отсутствии рабочего аппаратного кодера требуется явно выбрать 60 FPS.
+- Исправлен разбор SPS/PPS: поддерживаются Annex-B и AVCDecoderConfigurationRecord, последний NAL больше не обрезается. Length-prefixed output нормализуется к четырём байтам; ошибки кодера/пакетов сбрасывают сеанс. При изменении размеров заново отправляется format и начинается новый IDR.
+- Qt очередь ограничена примерно 4 MiB + 64 KiB. При накоплении пропускаются **сырые** кадры перед кодером. Сжатые зависимые кадры не выбрасываются по одному: выход за лимит/100 мс накопления сбрасывает целый сеанс, следующий начинается с SPS/PPS/IDR.
+- Mac декодирует последовательно, с одним вызовом VideoToolbox в работе; TCP создаёт backpressure. Декодированные изображения занимают один слот. Замена этого изображения безопасна для H.264 references. Фиксированные дополнительные 50 мс в выделенном режиме убраны.
+- Экран определяется по окну, display link обновляется при переносе на другой экран. Запрашивается максимальная частота до 120; ProMotion может менять фактическую частоту. Максимум экрана и отправка новых изображений в слой — разные метрики.
+
+H.264 NV12 — 4:2:0, с потерями. Высокий битрейт не возвращает отсутствующую цветовую детализацию: проверяйте цветной мелкий текст и Windows ClearType. Начните с 1080p, масштаба 100–150%, 20–40 Mbps. Выбор большей картинки должен опираться на реальные измерения.
+
+## Сборка Windows
+
+Нужны поддерживаемая Qt 6.7+ версия Windows 10/11 x64, Visual Studio C++ с современным Windows 10/11 SDK, CMake, Qt с Multimedia, FFmpeg с соответствующими аппаратными энкодерами. Target явно включает объявления SDK Windows 10 RS2+ для TCP_INFO_v0. Возможность аппаратного кодирования зависит также от GPU и его драйвера. Конкретная Windows-система здесь не обнаружена. В исходники включён `appicon.ico` из существующего PNG, чтобы локальная сборка не зависела от отдельного CI шага генерации значка.
+
+Команды из x64 Native Tools PowerShell, пути замените на свои:
+
+```powershell
+$QtRoot = 'C:\Qt\6.7.0\msvc2019_64'
+$VcpkgRoot = 'C:\vcpkg'
+& "$VcpkgRoot\vcpkg.exe" install 'ffmpeg[x264,nvcodec,amf,qsv]:x64-windows' --recurse
+cmake -S Sources/BetterCastReceiverDesktop -B work/windows-build -G Ninja `
+  -DCMAKE_BUILD_TYPE=Release -DENABLE_SENDER=ON `
+  "-DCMAKE_PREFIX_PATH=$QtRoot" `
+  "-DCMAKE_TOOLCHAIN_FILE=$VcpkgRoot/scripts/buildsystems/vcpkg.cmake"
+cmake --build work/windows-build
+& "$QtRoot\bin\windeployqt.exe" --release work/windows-build/BetterCastReceiver.exe
+Copy-Item "$VcpkgRoot\installed\x64-windows\bin\*.dll" work/windows-build
+& work/windows-build/BetterCastReceiver.exe
+```
+
+Проверьте наличие Qt TLS backend после `windeployqt`: при его отсутствии приложение выдаст ошибку и не начнёт незашифрованный выделенный сеанс. Для самостоятельной сборки FFmpeg перечисление энкодеров проверяйте через `ffmpeg -encoders`; окончательная проверка — открытие выбранного кодера приложением. [Имена features подтверждены vcpkg](https://github.com/microsoft/vcpkg/blob/master/ports/ffmpeg/vcpkg.json). CI тоже обновлён на эти features, но не запускался в этой среде.
+
+EXE подписывается только вашей действительной подписью при распространении. Не используйте upstream NSIS-пакет как доказательство готовности/подписи VDD. Здесь подготовлены исходники, не проверенный Windows installer.
+
+## Сборка и запуск Mac
+
+Нужны Xcode/Command Line Tools с Swift 5.9+, macOS 13+. Для ProMotion предпочтителен macOS 14+ с NSView display link.
+
+```bash
+bash scripts/build-ethernet-mac.sh /полный/путь/BetterCast-Ethernet.app
+open /полный/путь/BetterCast-Ethernet.app
+```
+
+Скрипт отказывается перезаписывать существующее приложение. По умолчанию подпись локальная ad-hoc; Developer ID/notarization не выполнены. На этой машине собран arm64 app. Для другой архитектуры собирайте на соответствующем Mac или используйте штатную universal-сборку с вашей подписью. Не требуется отключение Gatekeeper.
+
+В основном приложении откройте **Receive Screen**, остановите общее ожидание, включите **Dedicated Ethernet**. Выберите IP адаптера и ожидаемый IP Windows. Не запускайте отдельный старый `BetterCastReceiver` — он не содержит новых настроек. Старый onboarding/отправитель может запрашивать Screen Recording/Accessibility; для самого приёма и вывода выделенного видео эти разрешения не нужны.
+
+Создайте отдельную identity-директорию:
+
+```bash
+bash scripts/create-ethernet-identity.sh /полный/путь/BetterCastIdentity
+```
+
+Скрипт создаёт RSA сертификат/ключ, PKCS#12 и случайный пароль, с правами файлов 600/каталога 700. Он не меняет trust stores. Выберите `receiver.p12` в Mac UI; пустое поле пароля читает `receiver.password` рядом. Для своей identity введите пароль вручную; пароль не сохраняется в UserDefaults. Не передавайте Windows приватный ключ/P12/пароль. После Start скопируйте показанный SHA-256 в Windows. На macOS 15+ импорт только в память; на 13/14 системный PKCS#12 API импортирует identity в пользовательскую Keychain — это явный побочный эффект Start, удалить эту конкретную identity можно через Keychain Access.
+
+На Windows включите Dedicated Ethernet, выберите Ethernet/IP, введите Mac IPv4 и SHA-256. Настройте монитор, FPS и битрейт, нажмите Send Screen. На Mac подтвердите первый источник. **Show Video / Full Screen**, выход Esc или Control-Command-F. Окно сохраняет соотношение сторон. После кабельного обрыва Windows повторяет попытки каждые две секунды на том же интерфейсе; зависший сеанс выявляется heartbeat/таймаутом. Stop отменяет повторные попытки.
+
+Сервер проверяется сертификатом; отправитель допускается по явно выбранному IP и подтверждению. Взаимной TLS-аутентификации клиента нет. Это режим прямого доверенного кабеля. Разрешённый IP сам по себе не криптографическая идентичность Windows.
+
+## Выделенная подсеть без шлюза и DNS
+
+Сначала снимите текущую конфигурацию:
+
+```powershell
+Get-NetAdapter | Format-Table Name,InterfaceDescription,ifIndex,Status,LinkSpeed
+Get-NetIPAddress -AddressFamily IPv4
+Get-NetRoute -AddressFamily IPv4 | Sort-Object DestinationPrefix
+Get-CimInstance Win32_VideoController | Select-Object Name,DriverVersion
+Get-ComputerInfo | Select-Object WindowsProductName,OsVersion,OsBuildNumber
+```
+
+```bash
+networksetup -listallhardwareports
+ifconfig
+netstat -rn -f inet
+system_profiler SPDisplaysDataType SPEthernetDataType
+```
+
+Например, **только после проверки на обоих устройствах и при активных VPN**: Windows `10.77.120.1`, Mac `10.77.120.2`, маска `255.255.255.252` (/30). В текущей таблице маршрутов доступного Mac пересечения с этим примером нет; Windows и будущие VPN не проверены. При совпадении с любой локальной/маршрутизируемой сетью выберите другую свободную подсеть.
+
+На свободном Ethernet Windows: свойства IPv4 → ручные IP и маска, шлюз пустой, DNS пустой. На **Ethernet-сервисе** Mac: TCP/IP → вручную, IP и маска, Router пустой, DNS этого отдельного сервиса пустой. Wi-Fi/другой интернет-интерфейс оставьте как есть. Не включайте ICS, мост, Internet Sharing; не меняйте default route. Сохраните исходные параметры выбранного сервиса для возврата.
+
+После соединения проверьте LinkSpeed/media обоих адаптеров; скорость USB адаптера не следует из имени Ethernet. Это приложение не измеряет согласованную физическую скорость порта. Если адрес выбранного адаптера поменялся, приложение ждёт прежний IP — исправьте ручные настройки/перезапустите выбранный сеанс, автоматического ухода на Wi-Fi нет.
+
+## Firewall: явные ограниченные изменения
+
+Автоматическое создание широких Windows firewall rules при запуске удалено. Не отключайте firewall. Windows Sender обычно использует разрешённый исходящий TCP; если политика запрещает его, создайте **явное** правило от администратора, подставив EXE, интерфейс и свободную подсеть:
+
+```powershell
+New-NetFirewallRule -DisplayName 'BetterCast Ethernet Out' -Direction Outbound `
+  -Program 'C:\полный\путь\BetterCastReceiver.exe' -Action Allow -Protocol TCP `
+  -RemotePort 51820 -RemoteAddress '10.77.120.0/30' -LocalAddress '10.77.120.1' `
+  -InterfaceAlias 'Ethernet' -Profile Any
+# Откат только этого правила:
+Remove-NetFirewallRule -DisplayName 'BetterCast Ethernet Out'
+```
+
+Входящие Windows TCP/UDP и mDNS этому режиму не нужны. Старые широкие правила существующей установки не удаляются автоматически; просмотрите их отдельно. На Mac разрешите входящие подключения **этому локальному приложению** в системном Firewall. Стандартный Mac Application Firewall ограничивает приложение; привязка listener к Ethernet/IP и проверка peer внутри приложения ограничивают сеанс. Глобальный PF не меняется. Для корпоративного firewall/PF нужен согласованный с администратором allow TCP 51820 именно от Windows Ethernet IP к Mac Ethernet IP; не добавляйте правила на весь интернет.
+
+## Виртуальный второй монитор
+
+1. Установите VDD из [официального релиза](https://github.com/VirtualDrivers/Virtual-Display-Driver/releases/tag/25.7.23) с проверкой издателя/подписи. Прочитайте его инструкцию; используйте нормальный установщик. Сборка и установка драйвера здесь не выполнялись.
+2. Если пакет требует отключить Secure Boot или проверку подписей — **эта установка не удовлетворяет задаче**. Остановитесь на проверке передачи существующего монитора, получите драйвер, принимаемый штатной политикой Windows. Не считайте локальную self-signed/test подпись эквивалентом принятой Windows подписи.
+3. В настройках установленного VDD оставьте `<monitors><count>1</count></monitors>`, используйте его поддерживаемую схему, сохраните backup. В закреплённом sample `1920×1080` и global refresh 60/120 уже есть. При изменении настроек перезапуск драйвера выполняйте явно штатным способом, а не каждым запуском BetterCast.
+4. Windows Settings → System → Display: отдельный виртуальный дисплей, **Extend desktop**. Расположите его рядом с основным, выберите масштаб Windows. В Advanced display убедитесь в 60/120 Гц.
+5. В BetterCast нажмите Refresh, выберите виртуальный монитор. **Use Installed Virtual Display** применяет выбранное разрешение/60 или 120 Гц только если Windows перечисляет этот режим и монитор имеет отдельный active source. Выберите соответствующие 60/120 **FPS видеопотока** отдельно.
+6. Перенесите окно на виртуальный дисплей обычной Windows мышью. Его изображение должно появиться на Mac. При обрыве дисплей остаётся установленным; после восстановления тот же источник захватывается вновь. Приложение не создаёт/удаляет мониторы при соединении или перезапуске.
+7. Чтобы отключить экран, явно выберите Disconnect this display в Windows Settings; для удаления драйвера — его установщик/Device Manager. BetterCast не удаляет остальные устройства и не меняет DPI автоматически.
+
+Если на Windows ещё нет работающего IDD, отдельно проверить передачу можно с существующего физического **extended/non-cloned** монитора при его фактических 60/120 Гц. Это не завершение задачи виртуального второго дисплея.
+
+## Диагностика и проверка 60/120
+
+Windows выводит фактические endpoints, interface, target FPS, capture/encode FPS, фактические записанные в TLS/TCP байты, encoder name, длительность encode call, сырой backlog (0: прямой вызов), encoder pending frames, Qt TCP queue, raw drops и **TCP RTT из SIO_TCP_INFO**. TCP RTT — оценка TCP стека, не задержка до экрана. Протокольный control ping RTT включает очереди/обработку приёмника и показан отдельно в sender stats. При недоступном API — no data. [Источник SIO_TCP_INFO](https://learn.microsoft.com/en-us/windows/win32/winsock/sio-tcp-info).
+
+Mac выводит фактический путь, negotiated H.264/FPS, размер декодированного изображения, receive/decode FPS, частоту передачи **новых** декодированных кадров в слой, аппаратный/программный VideoToolbox, время синхронного decode call, глубину decoder/render очередей и render drops. Частота enqueue не доказывает частоту физического scanout. Вывод CPU/GPU, instantaneous ProMotion, kernel queues и end-to-end — no data. Односторонние задержки не вычисляются из часов разных компьютеров.
+
+Нужно различать: encoder output bitrate, записанные TLS/TCP байты и байты полученного application payload. Последние два включают управление, первый — сжатое видео. Ethernet/IP/TCP overhead и NIC offload не входят в эти счётчики.
+
+Автоматические проверки на Mac:
+
+```bash
+brew install qt cmake ffmpeg
+# Дополнительно нужен Python 3; Qt-prefix при иной установке задайте CMAKE_PREFIX_PATH.
+BETTERCAST_TEST_TRANSPORT=1 bash scripts/test-ethernet.sh
+```
+
+Интеграционные тесты используют loopback/автоподтверждение **только с compile flag BETTERCAST_ETHERNET_TEST**. Эти способы отсутствуют в production build, UI не может включить их. Loopback тест не подтверждает Ethernet binding Windows, driver, presentation или работу двух устройств.
+
+На двух устройствах выполните последовательность:
+
+1. Сохраните характеристики ОС, GPU/драйвера, NIC/link speed и максимальную частоту принимающего экрана.
+2. Установленный один VDD, Extend, 1080p60. Откройте `tools/display-test.html` на виртуальном экране и включите полноэкранный режим; движение/полосы/мелкий цветной текст должны быть видны на Mac.
+3. Запишите минуту diagnostics, CPU/GPU Windows Task Manager и Mac Activity Monitor, текст при выбранном Windows scale. Повторите 1080p120 после проверки **виртуальных 120 Гц** и аппаратного encoder/decoder.
+4. Для движения должны приближаться к 120 capture/encode/receive/decode/new-frame submissions, а не только target. На неподвижном столе меньше кадров нормально. Нестабильность/дропы/растущий backlog означают незавершённую проверку 120; выбирайте 60/меньшую картинку явно.
+5. Интернет оставьте на другой сети, затем отключите доступ в интернет на время теста. Сеанс должен сохраниться. Захват Wireshark на обоих интерфейсах должен показать TLS/TCP 51820 только на Ethernet, без mDNS/видео на Wi-Fi. Payload TLS не требуется расшифровывать для проверки интерфейса.
+6. Выньте кабель при работающем Wi-Fi. Сеанс должен отключиться, не продолжить видео по Wi-Fi. Верните кабель, проверьте возвращение того же IP, источника и IDR-потока без второго монитора.
+7. Быстро двигайте/скролльте окна 10 минут, уменьшите пропускную способность контролируемым тестом. Очереди не должны расти без предела; raw/decode/render drops различайте. Повторите Stop/Start и несколько перезапусков, проверьте число VDD мониторов.
+8. Перенесите окно Mac на экран 60 Гц. Диагностика должна сообщить другой максимум, stream mode не должен молча перейти на 60. Закройте видео/откройте вновь, проверьте окно и выход из fullscreen.
+
+Сравнение заполняйте **из измерений**, без целевых значений вместо результатов:
+
+| 1080p | TCP RTT | Capture/encode/receive/decode FPS | New-frame submissions | E2E median/p95 | CPU/GPU | Drops/очереди | Текст |
+|---|---|---|---|---|---|---|---|
+| 60 | не измерено на кабеле | не измерено | не измерено | не измерено | не измерено | не измерено | не проверено |
+| 120 | не измерено на кабеле | не измерено | не измерено | не измерено | не измерено | не измерено | не проверено |
+
+Для E2E: камера 240 FPS или быстрее одновременно снимает исходный Windows экран и Mac с миллисекундным таймером/контрастными переходами. Сначала можно измерить передачу доступного физического Windows монитора, который виден камере; это проверяет тракт, отдельно от virtual-display теста. Если источник виртуальный, используйте синхронный локальный reference view на физическом мониторе и учитывайте добавленную фазу/путь его вывода. Не сравнивайте независимые таймеры, запущенные на Mac/Windows. Снимите минимум 100 переходов, оцените median/p95. Камера 240 FPS даёт квант 4,17 мс, плюс фаза двух экранов, rolling shutter, экспозиция и reference-view uncertainty. Укажите эту погрешность; 8,33 мс — период кадра 120 FPS, не обещание полной задержки.
+
+## Ограничения и оставшиеся действия
+
+Windows бинарник/аппаратные NVENC/AMF/QSV/курсор/QueryDisplayConfig и установка подписи VDD не проверены. Сборка C++ на Mac проверяет переносимые части, не эти Windows API. Нужны реальный Windows build и аппаратная таблица выше. Оптимизация CPU swscale/очередей реализована, сравнительный эффект на Windows ещё не измерен. Zero-copy, HEVC, 4:4:4, аудио и обратный ввод в новом протоколе не заявляются. Legacy приёмник и его протоколы остаются отдельными режимами; их нельзя смешивать с dedicated TLS.
+
+Новые runtime компоненты: системные Network/Security/CryptoKit/CoreVideo/QuartzCore и TLS в уже используемом Qt Network. FFmpeg/swscale уже зависимость проекта; дополнительные аппаратные features должны войти в Windows сборку. Сохранены GPL-3.0 и авторские уведомления. При распространении сохраняйте также лицензии Qt, FFmpeg/x264, аппаратных SDK и MIT VDD; не добавляйте GPL-incompatible nonfree FFmpeg options.

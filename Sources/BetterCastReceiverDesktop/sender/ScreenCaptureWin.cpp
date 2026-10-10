@@ -5,6 +5,11 @@
 #include <dxgi1_2.h>
 #include <Windows.h>
 #include <QDebug>
+extern "C" {
+#include <libswscale/swscale.h>
+#include <libavutil/pixfmt.h>
+}
+#include <algorithm>
 
 #pragma comment(lib, "d3d11.lib")
 #pragma comment(lib, "dxgi.lib")
@@ -14,7 +19,9 @@ ScreenCaptureWin::ScreenCaptureWin(int targetFPS, QObject* parent)
     : ScreenCapture(parent)
     , m_targetFPS(targetFPS)
 {
-    connect(&m_timer, &QTimer::timeout, this, &ScreenCaptureWin::captureFrame);
+    m_timer.setSingleShot(true);
+    m_timer.setTimerType(Qt::PreciseTimer);
+    connect(&m_timer, &QTimer::timeout, this, [this] { captureFrame(); if (m_running) scheduleNext(); });
 }
 
 void ScreenCaptureWin::setMonitorIndex(int adapterIndex, int outputIndex) {
@@ -47,7 +54,7 @@ bool ScreenCaptureWin::initD3D() {
 
     if (FAILED(hr)) {
         qWarning() << "Sender: Adapter" << m_adapterIndex << "not found, falling back to default";
-        selectedAdapter = nullptr;
+        return false;
     }
 
     hr = D3D11CreateDevice(
@@ -92,6 +99,12 @@ bool ScreenCaptureWin::initDuplication() {
         return false;
     }
 
+    DXGI_OUTPUT_DESC selectedDesc = {};
+    output->GetDesc(&selectedDesc);
+    if (!m_displayName.isEmpty() && QString::fromWCharArray(selectedDesc.DeviceName) != m_displayName) {
+        output->Release(); return false; // never capture a different display after topology changes
+    }
+    m_originX = selectedDesc.DesktopCoordinates.left; m_originY = selectedDesc.DesktopCoordinates.top;
     IDXGIOutput1* output1 = nullptr;
     hr = output->QueryInterface(__uuidof(IDXGIOutput1), (void**)&output1);
     output->Release();
@@ -147,8 +160,12 @@ bool ScreenCaptureWin::start() {
         }
     }
 
+    if (m_resolution.width() % 2 || m_resolution.height() % 2) {
+        cleanup(); emit error("NV12 requires even display dimensions"); return false;
+    }
     m_running = true;
-    m_timer.start(1000 / m_targetFPS);
+    m_clock.start(); m_tick = 0;
+    scheduleNext();
     if (m_useGdiFallback) {
         LogManager::instance().log(QString("Sender: Screen capture started (GDI mode) at %1 FPS, %2x%3")
                                        .arg(m_targetFPS).arg(m_resolution.width()).arg(m_resolution.height()));
@@ -170,13 +187,9 @@ bool ScreenCaptureWin::initGdiFallback() {
         // Fall back to primary display
         m_gdiDC = CreateDCA("DISPLAY", nullptr, nullptr, nullptr);
     } else {
-        m_gdiDC = CreateDCA(nullptr, m_displayName.toLocal8Bit().constData(), nullptr, nullptr);
+        m_gdiDC = CreateDCW(L"DISPLAY", reinterpret_cast<LPCWSTR>(m_displayName.utf16()), nullptr, nullptr);
     }
 
-    if (!m_gdiDC) {
-        // Try with device name directly
-        m_gdiDC = GetDC(nullptr);  // Full virtual desktop
-    }
 
     if (!m_gdiDC) {
         LogManager::instance().log("Sender: GDI CreateDC failed");
@@ -195,10 +208,15 @@ bool ScreenCaptureWin::initGdiFallback() {
 
     m_memDC = CreateCompatibleDC(m_gdiDC);
     m_bitmap = CreateCompatibleBitmap(m_gdiDC, w, h);
-    SelectObject(m_memDC, m_bitmap);
+    if (!m_memDC || !m_bitmap) { cleanup(); return false; }
+    m_originalBitmap = static_cast<HBITMAP>(SelectObject(m_memDC, m_bitmap));
 
+    DEVMODEW mode = {}; mode.dmSize = sizeof(mode);
+    if (!m_displayName.isEmpty() && EnumDisplaySettingsW(reinterpret_cast<LPCWSTR>(m_displayName.utf16()), ENUM_CURRENT_SETTINGS, &mode)) {
+        m_originX = mode.dmPosition.x; m_originY = mode.dmPosition.y;
+    }
     m_resolution = QSize(w, h);
-    m_useGdiFallback = true;
+    m_useGdiFallback = true; m_overlayPointer = true;
 
     LogManager::instance().log(QString("Sender: GDI capture initialized for %1 (%2x%3)")
                                    .arg(m_displayName.isEmpty() ? "primary" : m_displayName)
@@ -213,7 +231,7 @@ void ScreenCaptureWin::captureFrameGdi() {
     int h = m_resolution.height();
 
     // Capture screen to memory DC
-    BitBlt(m_memDC, 0, 0, w, h, m_gdiDC, 0, 0, SRCCOPY);
+    if (!BitBlt(m_memDC, 0, 0, w, h, m_gdiDC, 0, 0, SRCCOPY | CAPTUREBLT)) return;
 
     // Read pixel data from bitmap
     BITMAPINFOHEADER bi = {};
@@ -225,44 +243,16 @@ void ScreenCaptureWin::captureFrameGdi() {
     bi.biCompression = BI_RGB;
 
     QByteArray bgraData(w * h * 4, Qt::Uninitialized);
-    GetDIBits(m_memDC, m_bitmap, 0, h, bgraData.data(),
+    HGDIOBJ previous = SelectObject(m_memDC, m_originalBitmap);
+    int rows = GetDIBits(m_gdiDC, m_bitmap, 0, h, bgraData.data(),
               reinterpret_cast<BITMAPINFO*>(&bi), DIB_RGB_COLORS);
+    SelectObject(m_memDC, previous);
+    if (rows != h) return;
 
-    // Convert BGRA → NV12 (same as DXGI path)
-    const uint8_t* bgra = reinterpret_cast<const uint8_t*>(bgraData.constData());
-    int pitch = w * 4;
-    int ySize = w * h;
-    int uvSize = w * (h / 2);
-    QByteArray nv12(ySize + uvSize, Qt::Uninitialized);
-    uint8_t* yPlane = reinterpret_cast<uint8_t*>(nv12.data());
-    uint8_t* uvPlane = yPlane + ySize;
-
-    for (int y = 0; y < h; y += 2) {
-        const uint8_t* row0 = bgra + y * pitch;
-        const uint8_t* row1 = bgra + (y + 1) * pitch;
-        uint8_t* yRow0 = yPlane + y * w;
-        uint8_t* yRow1 = yPlane + (y + 1) * w;
-        uint8_t* uvRow = uvPlane + (y / 2) * w;
-
-        for (int x = 0; x < w; x += 2) {
-            int b00 = row0[x*4+0], g00 = row0[x*4+1], r00 = row0[x*4+2];
-            int b01 = row0[(x+1)*4+0], g01 = row0[(x+1)*4+1], r01 = row0[(x+1)*4+2];
-            int b10 = row1[x*4+0], g10 = row1[x*4+1], r10 = row1[x*4+2];
-            int b11 = row1[(x+1)*4+0], g11 = row1[(x+1)*4+1], r11 = row1[(x+1)*4+2];
-
-            yRow0[x]   = static_cast<uint8_t>(((66*r00 + 129*g00 + 25*b00 + 128) >> 8) + 16);
-            yRow0[x+1] = static_cast<uint8_t>(((66*r01 + 129*g01 + 25*b01 + 128) >> 8) + 16);
-            yRow1[x]   = static_cast<uint8_t>(((66*r10 + 129*g10 + 25*b10 + 128) >> 8) + 16);
-            yRow1[x+1] = static_cast<uint8_t>(((66*r11 + 129*g11 + 25*b11 + 128) >> 8) + 16);
-
-            int rAvg = (r00 + r01 + r10 + r11) >> 2;
-            int gAvg = (g00 + g01 + g10 + g11) >> 2;
-            int bAvg = (b00 + b01 + b10 + b11) >> 2;
-            uvRow[x]   = static_cast<uint8_t>(((-38*rAvg - 74*gAvg + 112*bAvg + 128) >> 8) + 128);
-            uvRow[x+1] = static_cast<uint8_t>(((112*rAvg - 94*gAvg - 18*bAvg + 128) >> 8) + 128);
-        }
-    }
-
+    QByteArray nv12 = convertBGRA(reinterpret_cast<const uint8_t*>(bgraData.constData()), w * 4);
+    if (nv12.isEmpty()) return;
+    if (nv12 == m_previousNV12) return; // static GDI captures are not new video frames
+    m_previousNV12 = nv12;
     emit frameCaptured(nv12, w, h);
 }
 
@@ -296,6 +286,7 @@ void ScreenCaptureWin::captureFrame() {
         return;
     }
 
+    if (frameInfo.LastMouseUpdateTime.QuadPart != 0) m_overlayPointer = frameInfo.PointerPosition.Visible;
     // Copy desktop texture to staging texture for CPU read
     ID3D11Texture2D* desktopTex = nullptr;
     hr = desktopResource->QueryInterface(__uuidof(ID3D11Texture2D), (void**)&desktopTex);
@@ -319,61 +310,102 @@ void ScreenCaptureWin::captureFrame() {
     const uint8_t* bgra = static_cast<const uint8_t*>(mapped.pData);
     int pitch = mapped.RowPitch;
 
-    // NV12: Y plane (w*h) + UV plane (w*h/2), interleaved U/V
-    int ySize = w * h;
-    int uvSize = w * (h / 2);
-    QByteArray nv12(ySize + uvSize, Qt::Uninitialized);
-    uint8_t* yPlane = reinterpret_cast<uint8_t*>(nv12.data());
-    uint8_t* uvPlane = yPlane + ySize;
-
-    // BGRA → NV12 conversion (BT.601)
-    // Combined pass: compute Y for every pixel, UV for even rows/cols
-    // Fused loop avoids iterating over the frame twice
-    for (int y = 0; y < h; y += 2) {
-        const uint8_t* row0 = bgra + y * pitch;
-        const uint8_t* row1 = bgra + (y + 1) * pitch;
-        uint8_t* yRow0 = yPlane + y * w;
-        uint8_t* yRow1 = yPlane + (y + 1) * w;
-        uint8_t* uvRow = uvPlane + (y / 2) * w;
-
-        for (int x = 0; x < w; x += 2) {
-            // Top-left pixel
-            int b00 = row0[x*4+0], g00 = row0[x*4+1], r00 = row0[x*4+2];
-            // Top-right pixel
-            int b01 = row0[(x+1)*4+0], g01 = row0[(x+1)*4+1], r01 = row0[(x+1)*4+2];
-            // Bottom-left pixel
-            int b10 = row1[x*4+0], g10 = row1[x*4+1], r10 = row1[x*4+2];
-            // Bottom-right pixel
-            int b11 = row1[(x+1)*4+0], g11 = row1[(x+1)*4+1], r11 = row1[(x+1)*4+2];
-
-            // Y for all 4 pixels
-            yRow0[x]   = static_cast<uint8_t>(((66*r00 + 129*g00 + 25*b00 + 128) >> 8) + 16);
-            yRow0[x+1] = static_cast<uint8_t>(((66*r01 + 129*g01 + 25*b01 + 128) >> 8) + 16);
-            yRow1[x]   = static_cast<uint8_t>(((66*r10 + 129*g10 + 25*b10 + 128) >> 8) + 16);
-            yRow1[x+1] = static_cast<uint8_t>(((66*r11 + 129*g11 + 25*b11 + 128) >> 8) + 16);
-
-            // UV from 2x2 average
-            int rAvg = (r00 + r01 + r10 + r11) >> 2;
-            int gAvg = (g00 + g01 + g10 + g11) >> 2;
-            int bAvg = (b00 + b01 + b10 + b11) >> 2;
-            uvRow[x]   = static_cast<uint8_t>(((-38*rAvg - 74*gAvg + 112*bAvg + 128) >> 8) + 128);
-            uvRow[x+1] = static_cast<uint8_t>(((112*rAvg - 94*gAvg - 18*bAvg + 128) >> 8) + 128);
-        }
-    }
+    QByteArray nv12 = convertBGRA(bgra, pitch);
 
     m_context->Unmap(m_stagingTex, 0);
 
-    emit frameCaptured(nv12, w, h);
+    if (!nv12.isEmpty()) emit frameCaptured(nv12, w, h);
 }
 
+QByteArray ScreenCaptureWin::convertBGRA(const uint8_t* data, int pitch) {
+    const int w = m_resolution.width(), h = m_resolution.height();
+    m_sws = sws_getCachedContext(m_sws, w, h, AV_PIX_FMT_BGRA, w, h, AV_PIX_FMT_NV12,
+                                SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+    if (!m_sws) return {};
+    // Explicit BT.709 limited range on both encoder and receiver.
+    const int* coefficients = sws_getCoefficients(SWS_CS_ITU709);
+    sws_setColorspaceDetails(m_sws, coefficients, 1, coefficients, 0, 0, 1 << 16, 1 << 16);
+    QByteArray nv12(w * h * 3 / 2, Qt::Uninitialized);
+    const uint8_t* src[4] = {data, nullptr, nullptr, nullptr};
+    int srcStride[4] = {pitch, 0, 0, 0};
+    uint8_t* dst[4] = {reinterpret_cast<uint8_t*>(nv12.data()), reinterpret_cast<uint8_t*>(nv12.data()) + w * h, nullptr, nullptr};
+    int dstStride[4] = {w, w, 0, 0};
+    if (sws_scale(m_sws, src, srcStride, 0, h, dst, dstStride) != h) return {};
+    if (m_overlayPointer) overlayCursor(nv12, data, pitch);
+    return nv12;
+}
+void ScreenCaptureWin::overlayCursor(QByteArray& nv12, const uint8_t* bgra, int pitch) {
+    CURSORINFO cursor = {}; cursor.cbSize = sizeof(cursor);
+    if (!GetCursorInfo(&cursor) || !(cursor.flags & CURSOR_SHOWING)) return;
+    ICONINFO icon = {};
+    if (!GetIconInfo(cursor.hCursor, &icon)) return;
+    BITMAP shape = {};
+    GetObject(icon.hbmColor ? icon.hbmColor : icon.hbmMask, sizeof(shape), &shape);
+    const int iconW = shape.bmWidth, iconH = icon.hbmColor ? shape.bmHeight : shape.bmHeight / 2;
+    const int left = cursor.ptScreenPos.x - m_originX - int(icon.xHotspot);
+    const int top = cursor.ptScreenPos.y - m_originY - int(icon.yHotspot);
+    if (icon.hbmColor) DeleteObject(icon.hbmColor);
+    if (icon.hbmMask) DeleteObject(icon.hbmMask);
+    const int w = m_resolution.width(), h = m_resolution.height();
+    const int x = std::max(0, left) & ~1, y = std::max(0, top) & ~1;
+    const int endX = std::min(w, (left + iconW + 1) & ~1), endY = std::min(h, (top + iconH + 1) & ~1);
+    const int cw = endX - x, ch = endY - y;
+    if (cw <= 0 || ch <= 0 || iconW <= 0 || iconH <= 0) return;
+    if (!m_cursorDC) m_cursorDC = CreateCompatibleDC(nullptr);
+    if (!m_cursorDC) return;
+    if (m_cursorSize != QSize(cw, ch)) {
+        if (m_cursorOriginalBitmap) SelectObject(m_cursorDC, m_cursorOriginalBitmap);
+        if (m_cursorBitmap) DeleteObject(m_cursorBitmap);
+        BITMAPINFO info = {}; info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        info.bmiHeader.biWidth = cw; info.bmiHeader.biHeight = -ch;
+        info.bmiHeader.biPlanes = 1; info.bmiHeader.biBitCount = 32; info.bmiHeader.biCompression = BI_RGB;
+        m_cursorBitmap = CreateDIBSection(m_cursorDC, &info, DIB_RGB_COLORS, &m_cursorBits, nullptr, 0);
+        if (!m_cursorBitmap) { m_cursorBits = nullptr; return; }
+        auto original = static_cast<HBITMAP>(SelectObject(m_cursorDC, m_cursorBitmap));
+        if (!m_cursorOriginalBitmap) m_cursorOriginalBitmap = original;
+        m_cursorSize = QSize(cw, ch);
+    }
+    for (int row = 0; row < ch; ++row)
+        memcpy(static_cast<uint8_t*>(m_cursorBits) + row * cw * 4, bgra + (y + row) * pitch + x * 4, cw * 4);
+    if (!DrawIconEx(m_cursorDC, left - x, top - y, cursor.hCursor, iconW, iconH, 0, nullptr, DI_NORMAL)) return;
+    GdiFlush();
+    m_cursorSws = sws_getCachedContext(m_cursorSws, cw, ch, AV_PIX_FMT_BGRA, cw, ch, AV_PIX_FMT_NV12, SWS_FAST_BILINEAR, nullptr, nullptr, nullptr);
+    if (!m_cursorSws) return;
+    const int* coefficients = sws_getCoefficients(SWS_CS_ITU709);
+    sws_setColorspaceDetails(m_cursorSws, coefficients, 1, coefficients, 0, 0, 1 << 16, 1 << 16);
+    QByteArray converted(cw * ch * 3 / 2, Qt::Uninitialized);
+    const uint8_t* src[4] = {static_cast<const uint8_t*>(m_cursorBits), nullptr, nullptr, nullptr};
+    int srcStride[4] = {cw * 4, 0, 0, 0};
+    uint8_t* dst[4] = {reinterpret_cast<uint8_t*>(converted.data()), reinterpret_cast<uint8_t*>(converted.data()) + cw * ch, nullptr, nullptr};
+    int dstStride[4] = {cw, cw, 0, 0};
+    if (sws_scale(m_cursorSws, src, srcStride, 0, ch, dst, dstStride) != ch) return;
+    for (int row = 0; row < ch; ++row) memcpy(nv12.data() + (y + row) * w + x, dst[0] + row * cw, cw);
+    for (int row = 0; row < ch / 2; ++row) memcpy(nv12.data() + w * h + (y / 2 + row) * w + x, dst[1] + row * cw, cw);
+}
+void ScreenCaptureWin::scheduleNext() {
+    // Fractional 8.333ms cadence, absolute monotonic deadlines; never catch up with stale frames.
+    const qint64 now = m_clock.nsecsElapsed();
+    m_tick = std::max(m_tick + 1, now * m_targetFPS / 1000000000LL + 1);
+    const qint64 deadline = m_tick * 1000000000LL / m_targetFPS;
+    m_timer.start(int(std::max<qint64>(1, (deadline - now + 999999) / 1000000)));
+}
 void ScreenCaptureWin::cleanup() {
+    if (m_sws) { sws_freeContext(m_sws); m_sws = nullptr; }
+    if (m_cursorSws) { sws_freeContext(m_cursorSws); m_cursorSws = nullptr; }
+    if (m_cursorDC && m_cursorOriginalBitmap) SelectObject(m_cursorDC, m_cursorOriginalBitmap);
+    if (m_cursorBitmap) { DeleteObject(m_cursorBitmap); m_cursorBitmap = nullptr; }
+    if (m_cursorDC) { DeleteDC(m_cursorDC); m_cursorDC = nullptr; }
+    m_cursorOriginalBitmap = nullptr;
+    m_cursorBits = nullptr; m_cursorSize = QSize(); m_previousNV12.clear();
     if (m_duplication) { m_duplication->Release(); m_duplication = nullptr; }
     if (m_stagingTex)  { m_stagingTex->Release();  m_stagingTex = nullptr; }
     if (m_context)     { m_context->Release();     m_context = nullptr; }
     if (m_device)      { m_device->Release();      m_device = nullptr; }
+    if (m_memDC && m_originalBitmap) SelectObject(m_memDC, m_originalBitmap);
     if (m_bitmap)      { DeleteObject(m_bitmap);   m_bitmap = nullptr; }
     if (m_memDC)       { DeleteDC(m_memDC);        m_memDC = nullptr; }
     if (m_gdiDC)       { DeleteDC(m_gdiDC);        m_gdiDC = nullptr; }
-    m_useGdiFallback = false;
+    m_originalBitmap = nullptr;
+    m_useGdiFallback = false; m_overlayPointer = false;
     m_resolution = QSize();
 }

@@ -42,6 +42,8 @@ public:
     bool removeAllVirtualDisplays();
     int virtualDisplayCount() const;
 
+    bool verifyDisplayMode(const QString& device, int width, int height, int refreshRate) const;
+
     // Monitor enumeration (all monitors — real + virtual)
     QVector<MonitorInfo> enumerateMonitors() const;
 
@@ -55,17 +57,6 @@ signals:
     void statusChanged(const QString& status);
 
 private:
-    bool detectVddInstall();
-    bool isDriverLoaded() const;
-    bool installDriver();
-    bool ensureVddControlRunning();
-    bool activateVirtualDisplay();
-    bool writeVddSettings(const QVector<VddResolution>& displays);
-    QVector<VddResolution> readVddSettings() const;
-    bool notifyDriverRefresh();
-    bool tryNamedPipe(const QString& command);
-
     QString m_vddPath;
     bool m_vddInstalled = false;
-    int m_createdDisplayCount = 0;
 };

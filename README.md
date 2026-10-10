@@ -89,6 +89,10 @@ Download the AppImage from [bettercast.online](https://bettercast.online/#instal
 
 Visit [bettercast.online](https://bettercast.online/#install) for the latest APK. Supports WiFi and USB via ADB tunnel.
 
+## Dedicated Windows → Mac Ethernet
+
+The source now includes an opt-in dedicated TLS/Ethernet mode with interface/IP selection, 60/120 FPS targets, bounded queues and reconnection. Windows virtual display/driver loading and physical two-device 120 FPS remain unverified. See [build, pairing and setup instructions](docs/ethernet-second-display.md) and [performed checks](docs/validation/ethernet-results.md). Use the unified Mac app, not the standalone legacy Swift receiver.
+
 ## Networking
 
 BetterCast uses **TCP (port 51820)** for the primary video/audio stream and **UDP (port 51821)** for chunked frame delivery. Service discovery uses mDNS (`_bettercast._tcp`).

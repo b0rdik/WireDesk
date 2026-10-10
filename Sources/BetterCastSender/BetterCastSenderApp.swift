@@ -3,6 +3,7 @@ import Network
 import Security
 import CoreImage.CIFilterBuiltins
 import ScreenCaptureKit
+import Combine
 import IOKit.graphics
 
 
@@ -12,6 +13,7 @@ struct BetterCastSenderApp: App {
     @StateObject private var networkClient = NetworkClient()
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding = false
     @AppStorage("hasCompletedTour") private var hasCompletedTour = false
+    @AppStorage("ethernet.enabled") private var ethernetReceiverEnabled = false
 
     /// Whether the donation nudge is on screen right now.
     ///
@@ -102,17 +104,17 @@ struct BetterCastSenderApp: App {
             }
         }
         .onAppear {
-            networkClient.checkScreenRecordingPermission()
-            networkClient.startBrowsing()
-            networkClient.startSenderInviteListener()
-            networkClient.startUSBWatch()
-            PhoneMirrorSession.shared.startWatching()
+            networkClient.setDedicatedReceiver(ethernetReceiverEnabled)
+            if !ethernetReceiverEnabled {
+                networkClient.checkScreenRecordingPermission()
+                PhoneMirrorSession.shared.startWatching()
+            }
             // Auto-start receiver so incoming connections work immediately
             let receiver = ReceiverManager.shared
             if !receiver.isRunning {
                 receiver.start()
             }
-            UpdateChecker.shared.checkForUpdates()
+            if !ethernetReceiverEnabled { UpdateChecker.shared.checkForUpdates() }
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
                 InputHandler.shared.checkAccessibility()
             }
@@ -122,6 +124,7 @@ struct BetterCastSenderApp: App {
                 }
             }
         }
+        .onChange(of: ethernetReceiverEnabled) { enabled in networkClient.setDedicatedReceiver(enabled) }
         .onChange(of: hasCompletedTour) { completed in
             if !completed {
                 sidebarSelection = .devices
@@ -3148,7 +3151,21 @@ class NetworkClient: ObservableObject, VideoEncoderDelegate, AudioEncoderDelegat
     var isConnected: Bool { !pipelines.isEmpty }
 
 
+    func setDedicatedReceiver(_ enabled: Bool) {
+        if enabled {
+            browser?.cancel(); browser = nil
+            senderInviteListener?.cancel(); senderInviteListener = nil
+            usbPollTimer?.invalidate(); usbPollTimer = nil
+            adbPollTimer?.invalidate(); adbPollTimer = nil
+            qrPairingTimer?.invalidate(); qrPairingTimer = nil
+            disconnect(); foundServices.removeAll()
+            status = "Dedicated Ethernet receiver: sender discovery and sessions disabled"
+        } else {
+            startBrowsing(); startSenderInviteListener(); startUSBWatch()
+        }
+    }
     func startBrowsing() {
+        guard !UserDefaults.standard.bool(forKey: "ethernet.enabled") else { return }
         // Browsing params should match connection params ideally to filter results,
         // but often we want to SEE everything even if we can't connect.
         // For now, let's keep browsing "Auto" (responsiveData) but Connect strictly.
@@ -3275,6 +3292,7 @@ class NetworkClient: ObservableObject, VideoEncoderDelegate, AudioEncoderDelegat
     /// listener. Once the connection is ready, we wrap it in a ConnectionPipeline and run
     /// the standard pipeline flow exactly as if the Mac had dialed out.
     func startSenderInviteListener() {
+        guard !UserDefaults.standard.bool(forKey: "ethernet.enabled") else { return }
         guard senderInviteListener == nil else { return }
         do {
             let tcpOptions = NWProtocolTCP.Options()
@@ -3696,6 +3714,7 @@ class NetworkClient: ObservableObject, VideoEncoderDelegate, AudioEncoderDelegat
     }
     
     func connect(to service: DiscoveredService) {
+        guard !UserDefaults.standard.bool(forKey: "ethernet.enabled") else { status = "Stop dedicated receiver mode before sending"; return }
         // Check if already connected or currently connecting to this service
         if connectedServices.contains(where: { $0.name == service.name }) {
             LogManager.shared.log("Sender: Already connected to \(service.name)")

@@ -13,6 +13,11 @@ class ReceiverVideoDecoder: ObservableObject {
     @Published var decodedFrameCount: Int = 0
 
     weak var delegate: ReceiverVideoDecoderDelegate?
+    private(set) var totalOutputFrames = 0
+    var dedicatedLowLatency = false
+    private(set) var hardwareDescription = "no data"
+    private(set) var lastDecodeMS: Double = 0
+    private(set) var inFlightCount = 0
     private var decompressionSession: VTDecompressionSession?
 
     deinit {
@@ -57,9 +62,9 @@ class ReceiverVideoDecoder: ObservableObject {
 
         while offset + 4 <= totalLen {
             let lenBuf = videoData.subdata(in: offset..<offset+4)
-            let naluLen = Int(UInt32(bigEndian: lenBuf.withUnsafeBytes { $0.load(as: UInt32.self) }))
+            let naluLen = Int(UInt32(bigEndian: lenBuf.withUnsafeBytes { $0.loadUnaligned(as: UInt32.self) }))
 
-            if offset + 4 + naluLen > totalLen { break }
+            if naluLen <= 0 || offset + 4 + naluLen > totalLen { requestKeyframe(); return }
 
             let naluHeader = videoData[offset + 4]
             let h264Type = naluHeader & 0x1F
@@ -100,6 +105,13 @@ class ReceiverVideoDecoder: ObservableObject {
         }
     }
 
+    func delivered(_ sampleBuffer: CMSampleBuffer) {
+        totalOutputFrames += 1
+        if dedicatedLowLatency { delegate?.didDecode(sampleBuffer: sampleBuffer) }
+        else { DispatchQueue.main.async { [weak self] in
+            guard let self else { return }; decodedFrameCount += 1; delegate?.didDecode(sampleBuffer: sampleBuffer)
+        } }
+    }
     func reset() {
         if let session = decompressionSession {
             VTDecompressionSessionInvalidate(session)
@@ -197,7 +209,9 @@ class ReceiverVideoDecoder: ObservableObject {
         self.formatDescription = formatDesc
 
         if needsNewSession {
-            let decoderSpecification: [String: Any] = [:]
+            let decoderSpecification: [String: Any] = [
+                kVTVideoDecoderSpecification_EnableHardwareAcceleratedVideoDecoder as String: true
+            ]
             let destinationImageBufferAttributes: [String: Any] = [
                 kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
                 kCVPixelBufferOpenGLCompatibilityKey as String: true
@@ -221,7 +235,11 @@ class ReceiverVideoDecoder: ObservableObject {
             if sessionStatus == noErr, let session = _session {
                 self.decompressionSession = session
                 VTSessionSetProperty(session, key: kVTDecompressionPropertyKey_RealTime, value: kCFBooleanTrue)
-                LogManager.shared.log("ReceiverVideoDecoder: Session Created")
+                var hardware: Unmanaged<CFTypeRef>?
+                let query = VTSessionCopyProperty(session, key: kVTDecompressionPropertyKey_UsingHardwareAcceleratedVideoDecoder,
+                                                   allocator: kCFAllocatorDefault, valueOut: &hardware)
+                hardwareDescription = query == noErr ? ((hardware?.takeRetainedValue() as? Bool) == true ? "VideoToolbox hardware" : "VideoToolbox software") : "no data"
+                LogManager.shared.log("ReceiverVideoDecoder: Session Created, " + hardwareDescription)
                 DispatchQueue.main.async { self.decoderState = "Session Ready" }
             } else {
                 LogManager.shared.log("ReceiverVideoDecoder: Failed to create session \(sessionStatus)")
@@ -262,7 +280,7 @@ class ReceiverVideoDecoder: ObservableObject {
         let sampleSizeArray = [nalData.count]
 
         let hostTime = CMClockGetTime(CMClockGetHostTimeClock())
-        let presentationTime = CMTimeAdd(hostTime, CMTime(seconds: 0.05, preferredTimescale: 1_000_000_000))
+        let presentationTime = dedicatedLowLatency ? hostTime : CMTimeAdd(hostTime, CMTime(seconds: 0.05, preferredTimescale: 1_000_000_000))
 
         var timing = CMSampleTimingInfo(
             duration: CMTime.invalid,
@@ -283,9 +301,13 @@ class ReceiverVideoDecoder: ObservableObject {
         )
 
         if sbStatus == noErr, let sb = sampleBuffer {
-            let flags: VTDecodeFrameFlags = [._EnableAsynchronousDecompression, ._EnableTemporalProcessing]
+            // Dedicated mode uses synchronous VT submission, serial TCP reads and at most one decode in flight.
+            // This applies backpressure instead of discarding compressed P frames.
+            let flags: VTDecodeFrameFlags = dedicatedLowLatency ? [] : [._EnableAsynchronousDecompression, ._EnableTemporalProcessing]
             var infoFlags: VTDecodeInfoFlags = []
 
+            let started = ProcessInfo.processInfo.systemUptime
+            inFlightCount += 1
             let decodeStatus = VTDecompressionSessionDecodeFrame(
                 session,
                 sampleBuffer: sb,
@@ -294,6 +316,9 @@ class ReceiverVideoDecoder: ObservableObject {
                 infoFlagsOut: &infoFlags
             )
 
+            inFlightCount = max(0, inFlightCount - 1)
+            lastDecodeMS = (ProcessInfo.processInfo.systemUptime - started) * 1000
+            if dedicatedLowLatency && decodeStatus != noErr { requestKeyframe() }
             if decodeStatus == -12916 { // kVTInvalidSessionErr
                 // Session invalidated — clear it so it gets recreated on next keyframe
                 VTDecompressionSessionInvalidate(session)
@@ -348,9 +373,6 @@ private func receiverDecompressionCallback(
     )
 
     if let sb = sampleBuffer {
-        DispatchQueue.main.async {
-            decoder.decodedFrameCount += 1
-            decoder.delegate?.didDecode(sampleBuffer: sb)
-        }
+        decoder.delivered(sb)
     }
 }

@@ -33,7 +33,14 @@ uint16_t NetworkListener::actualTcpPort() const {
     return kDefaultTcpPort;
 }
 
+void NetworkListener::stop() {
+    disconnectAll();
+    if (m_heartbeatTimer) { m_heartbeatTimer->stop(); m_heartbeatTimer->deleteLater(); m_heartbeatTimer = nullptr; }
+    if (m_tcpServer) { m_tcpServer->close(); m_tcpServer->deleteLater(); m_tcpServer = nullptr; }
+    if (m_udpSocket) { m_udpSocket->close(); m_udpSocket->deleteLater(); m_udpSocket = nullptr; }
+}
 void NetworkListener::start() {
+    if (m_tcpServer) return;
     // Start TCP server
     m_tcpServer = new QTcpServer(this);
     connect(m_tcpServer, &QTcpServer::newConnection, this, &NetworkListener::onNewTcpConnection);
