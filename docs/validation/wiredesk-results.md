@@ -16,7 +16,7 @@ This report covers the rename/setup/update changes. The earlier pipeline measure
 | Official Sparkle signature verified with app's pinned public key | PASS |
 | Archive mutation | PASS: rejected |
 | Windows native compilation / pairing and encoder tests | PASS in [Actions 38082677868](https://github.com/b0rdik/WireDesk/actions/runs/38082677868) |
-| Windows package / per-user install-launch-uninstall | Final smoke test pending; CI executes it before artifact upload |
+| Windows package / per-user install-launch-uninstall | PASS in [Actions 38084453592](https://github.com/b0rdik/WireDesk/actions/runs/38084453592): installed EXE/runtime/version/URL handler, native process alive, clean uninstall registration |
 | Actual installed Mac/Windows OTA cycle | Pending; signature check alone is not an install-cycle check |
 | Physical VDD / two-computer Ethernet stream / real120FPS scanout / end-to-end latency | Not tested: WindowsPC hardware test is unavailable |
 
