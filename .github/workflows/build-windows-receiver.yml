@@ -180,7 +180,7 @@ jobs:
           printf '%s' "$OTA_KEY" > "$RUNNER_TEMP/ota.key"
           trap 'rm -f "$RUNNER_TEMP/ota.key"' EXIT
           python3 scripts/publish-appcasts.py --sign-tool "$RUNNER_TEMP/sparkle/bin/sign_update" --key-file "$RUNNER_TEMP/ota.key" --mac dist/WireDesk-mac-universal.zip --windows "dist/WireDesk-Setup-$(cat VERSION).exe" --output dist
-          shasum -a 256 dist/*.zip dist/*.exe > dist/SHA256SUMS.txt
+          (cd dist && shasum -a 256 *.zip *.exe > SHA256SUMS.txt)
       - name: Publish release and feeds
         env:
           GH_TOKEN: ${{ github.token }}
