@@ -20,12 +20,17 @@ struct WireDeskDashboard: View {
     private var title: String { link.connected ? "Второй экран подключён" : link.running ? "Mac готов к подключению" : "Больше места для ваших идей" }
 
     var body: some View {
+        GeometryReader { geometry in
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 header
                 hero
-                ViewThatFits(in: .horizontal) {
-                    HStack(alignment: .top, spacing: 16) { cableCard.frame(minWidth: 275); pairingCard.frame(minWidth: 275) }
+                if geometry.size.width >= 820 {
+                    HStack(alignment: .top, spacing: 16) {
+                        cableCard.frame(maxWidth: .infinity)
+                        pairingCard.frame(maxWidth: .infinity)
+                    }
+                } else {
                     VStack(spacing: 16) { cableCard; pairingCard }
                 }
                 if link.connected { metrics }
@@ -39,6 +44,7 @@ struct WireDeskDashboard: View {
                 }.foregroundStyle(Color.white.opacity(0.8)).padding(20).background(cardBackground)
                 footer
             }.padding(28).frame(maxWidth: 1180).frame(maxWidth: .infinity)
+        }
         }
         .background(wireBackground).preferredColorScheme(.dark).tint(wireMint)
         .frame(minWidth: 580, minHeight: 530)
